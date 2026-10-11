@@ -136,6 +136,7 @@ class _CircleInfoScreenState extends ConsumerState<CircleInfoScreen> {
                   controller: _emailCtrl,
                   decoration: const InputDecoration(
                     labelText: 'Add member by email',
+                    hintText: 'friend@… or agent@circulo.app',
                   ),
                   keyboardType: TextInputType.emailAddress,
                 ),
@@ -196,7 +197,11 @@ class _MemberTile extends ConsumerWidget {
         size: UserAvatarSize.md,
       ),
       title: Text(title),
-      subtitle: Text(role),
+      subtitle: Text(
+        user?.isAgent == true
+            ? (role == 'admin' ? 'Agent · admin' : 'Agent')
+            : role,
+      ),
       dense: true,
     );
   }

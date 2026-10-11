@@ -15,6 +15,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/brand_chrome.dart';
 import '../../core/utils/download_helper.dart';
 import '../../core/widgets/user_identity.dart';
+import '../../data/repositories/agent_repository.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/circle_repository.dart';
 import '../../data/repositories/media_repository.dart';
@@ -1180,6 +1181,7 @@ class _PostBubble extends ConsumerWidget {
               loading: () => const SizedBox.shrink(),
               error: (_, _) => const SizedBox.shrink(),
             ),
+            _AgentActionRow(circleId: circleId, post: post),
           ],
         ),
       ),
@@ -1190,6 +1192,146 @@ class _PostBubble extends ConsumerWidget {
     final h = dt.hour.toString().padLeft(2, '0');
     final m = dt.minute.toString().padLeft(2, '0');
     return '$h:$m';
+  }
+}
+
+class _AgentActionRow extends ConsumerStatefulWidget {
+  const _AgentActionRow({
+    required this.circleId,
+    required this.post,
+  });
+
+  final String circleId;
+  final CirclePost post;
+
+  @override
+  ConsumerState<_AgentActionRow> createState() => _AgentActionRowState();
+}
+
+class _AgentActionRowState extends ConsumerState<_AgentActionRow> {
+  String? _busyActionId;
+
+  Future<void> _onAction(String actionId) async {
+    final post = widget.post;
+    if (actionId == 'open_pr') {
+      final url = post.agentPrUrl;
+      if (url == null || url.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No PR URL yet')),
+          );
+        }
+        return;
+      }
+      final uri = Uri.tryParse(url);
+      if (uri == null) return;
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    String? followUp;
+    if (actionId == 'continue') {
+      followUp = await showDialog<String>(
+        context: context,
+        builder: (ctx) {
+          final ctrl = TextEditingController(text: 'Continue from last result');
+          return AlertDialog(
+            title: const Text('Continue'),
+            content: TextField(
+              controller: ctrl,
+              decoration: const InputDecoration(
+                labelText: 'Follow-up prompt',
+              ),
+              maxLines: 3,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+                child: const Text('Continue'),
+              ),
+            ],
+          );
+        },
+      );
+      if (followUp == null || followUp.isEmpty) return;
+    }
+
+    setState(() => _busyActionId = actionId);
+    try {
+      await ref.read(agentRepositoryProvider).agentAction(
+            circleId: widget.circleId,
+            postId: post.id,
+            actionId: actionId,
+            followUp: followUp,
+          );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              actionId == 'retry' ? 'Retry started' : 'Continue started',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Agent action failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busyActionId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final author = ref.watch(appUserProvider(widget.post.authorId)).asData?.value;
+    final show = widget.post.hasAgentMeta || author?.isAgent == true;
+    if (!show) return const SizedBox.shrink();
+
+    final actions = widget.post.agentActions.isNotEmpty
+        ? widget.post.agentActions
+        : const [
+            (id: 'continue', label: 'Continue'),
+            (id: 'open_pr', label: 'Open PR'),
+            (id: 'retry', label: 'Retry'),
+          ];
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        children: [
+          for (final a in actions)
+            OutlinedButton(
+              onPressed: _busyActionId != null
+                  ? null
+                  : (a.id == 'open_pr' &&
+                          (widget.post.agentPrUrl == null ||
+                              widget.post.agentPrUrl!.isEmpty))
+                      ? null
+                      : () => _onAction(a.id),
+              style: OutlinedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+              ),
+              child: _busyActionId == a.id
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(a.label),
+            ),
+        ],
+      ),
+    );
   }
 }
 

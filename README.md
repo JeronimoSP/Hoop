@@ -6,6 +6,8 @@ Contrato: [docs/13](../docs/13-diseno-tecnico-mvp-firebase.md) · Plan: [docs/15
 
 **App online (Hosting):** https://circulo-mvp.web.app
 
+**Freeze baseline:** Tag `v0-freeze` marks the Circulo MVP snapshot on private GitHub before the Cursor Cloud circle-agent feature. Remote: `https://github.com/jspotorno/circulo`. Invite `agent@circulo.app` into a dedicated dev circle (after `bootstrapCircleAgent`); member messages trigger cloud agent runs that reply in-thread with Continue / Open PR / Retry.
+
 ## Setup
 
 1. Instala Flutter 3.x y crea un proyecto Firebase.
@@ -76,7 +78,24 @@ Hosting suele registrar `*.web.app` / `*.firebaseapp.com` automáticamente; comp
 - [ ] PDF o video: portada tras Cloud Function (`generatePdfCover`)
 - [ ] Segundo dispositivo ve el hilo en realtime
 
-Logs Functions: `firebase functions:log --only generatePdfCover,notifyOnNewPost`
+Logs Functions: `firebase functions:log --only generatePdfCover,notifyOnNewPost,onCircleAgentPost,agentAction`
+
+### Circle Agent (Cursor Cloud)
+
+1. Set secrets/params (Blaze project):
+   ```bash
+   firebase functions:secrets:set CURSOR_API_KEY
+   firebase functions:config:set # or params: GITHUB_REPO=jspotorno/circulo
+   ```
+   Deploy with params, e.g.:
+   ```bash
+   firebase deploy --only functions:bootstrapCircleAgent,functions:onCircleAgentPost,functions:agentAction \
+     --set-env-vars GITHUB_REPO=jspotorno/circulo
+   ```
+   Prefer `firebase functions:params` / `.env` for `GITHUB_REPO`, `AGENT_EMAIL=agent@circulo.app`, `AGENT_MODEL_ID=composer-2.5`.
+2. As platform admin, call callable `bootstrapCircleAgent` once (or use Firebase console Admin SDK) to create `users/{uid}` with `isAgent: true`, email `agent@circulo.app`.
+3. In a dedicated **dev** circle, admin → Add member → `agent@circulo.app`.
+4. Any non-agent post in that circle enqueues a Cursor cloud run; the agent replies in-thread.
 
 ## Smoke checklist (E1–E5 + media)
 

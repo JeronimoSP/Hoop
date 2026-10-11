@@ -54,15 +54,18 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if signedIn();
       allow create: if signedIn() && uid() == userId
-        && request.resource.data.isPlatformAdmin == false;
-      allow update: if signedIn() && uid() == userId && (
-        request.resource.data.isPlatformAdmin == resource.data.isPlatformAdmin
-        || (
-          selfPromoteEnabled()
-          && resource.data.isPlatformAdmin == false
-          && request.resource.data.isPlatformAdmin == true
-        )
-      );
+        && request.resource.data.isPlatformAdmin == false
+        && request.resource.data.get('isAgent', false) == false;
+      allow update: if signedIn() && uid() == userId
+        && request.resource.data.get('isAgent', false) == resource.data.get('isAgent', false)
+        && (
+          request.resource.data.isPlatformAdmin == resource.data.isPlatformAdmin
+          || (
+            selfPromoteEnabled()
+            && resource.data.isPlatformAdmin == false
+            && request.resource.data.isPlatformAdmin == true
+          )
+        );
       allow delete: if false;
 
       match /fcmTokens/{tokenId} {
@@ -111,6 +114,12 @@ service cloud.firestore {
           && request.resource.data.createdBy == uid();
         allow update: if isCircleAdmin(circleId);
         allow delete: if false;
+      }
+
+      // Cursor Cloud agent jobs — members read; only Admin SDK (Functions) writes.
+      match /agentJobs/{jobId} {
+        allow read: if isMember(circleId);
+        allow create, update, delete: if false;
       }
     }
 

@@ -20,6 +20,11 @@ initializeApp();
 
 export { notifyOnNewPost } from './notify_on_new_post.js';
 export { generateImageVariants } from './generate_image_variants.js';
+export {
+  bootstrapCircleAgent,
+  onCircleAgentPost,
+  agentAction,
+} from './circle_agent.js';
 
 const PATH_RE =
   /^circles\/([^/]+)\/uploads\/([^/]+)\/([^/]+)\/([^/]+)$/;

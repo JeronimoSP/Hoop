@@ -237,6 +237,55 @@ class CirclePost {
   bool get hasLargeRef =>
       largeStoragePath != null || largeDownloadUrl != null;
 
+  /// Cursor Cloud agent reply metadata (`meta.agent` / `meta.agentActions`).
+  bool get hasAgentMeta {
+    if (meta['agent'] is Map) return true;
+    final actions = meta['agentActions'];
+    return actions is List && actions.isNotEmpty;
+  }
+
+  String? get agentJobId {
+    final agent = meta['agent'];
+    if (agent is Map) {
+      final id = agent['jobId']?.toString();
+      if (id != null && id.isNotEmpty) return id;
+    }
+    return null;
+  }
+
+  String? get agentPrUrl {
+    final agent = meta['agent'];
+    if (agent is Map) {
+      final url = agent['prUrl']?.toString();
+      if (url != null && url.isNotEmpty) return url;
+    }
+    return null;
+  }
+
+  List<({String id, String label})> get agentActions {
+    final fromAgent = meta['agent'] is Map
+        ? (meta['agent'] as Map)['actions']
+        : null;
+    final raw = fromAgent is List ? fromAgent : meta['agentActions'];
+    if (raw is! List) {
+      if (!hasAgentMeta) return const [];
+      return const [
+        (id: 'continue', label: 'Continue'),
+        (id: 'open_pr', label: 'Open PR'),
+        (id: 'retry', label: 'Retry'),
+      ];
+    }
+    final out = <({String id, String label})>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final id = item['id']?.toString() ?? '';
+      final label = item['label']?.toString() ?? id;
+      if (id.isEmpty) continue;
+      out.add((id: id, label: label));
+    }
+    return out;
+  }
+
   factory CirclePost.fromMap(String id, Map<String, dynamic> data) {
     final replyRaw = data['replyTo'];
     return CirclePost(
