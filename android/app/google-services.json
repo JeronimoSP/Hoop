@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "302212210419",
+    "project_id": "circulo-mvp",
+    "storage_bucket": "circulo-mvp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:302212210419:android:5010324d1152ceefb1e186",
+        "android_client_info": {
+          "package_name": "com.circulo.circulo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBxICi9VYmAjDEh-ggYD804lj_jATlSBVc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

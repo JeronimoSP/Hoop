@@ -1,0 +1,28 @@
+{
+  "name": "circulo-functions",
+  "description": "Cloud Functions for Circle — PDF cover and FCM notify",
+  "engines": {
+    "node": "20"
+  },
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.65",
+    "@types/fluent-ffmpeg": "^2.1.28",
+    "ffmpeg-static": "^5.3.0",
+    "firebase-admin": "^13.0.2",
+    "firebase-functions": "^6.3.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "pdfjs-dist": "^4.10.38"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "private": true
+}
