@@ -2,7 +2,7 @@
 
 Mobile app (iOS/Android) **Hoop** — Evocative World elearning product — with Google Auth, realtime Firestore, block Assignments (system chat) + rail, and typed thread. Also runs in **Chrome** (`flutter run -d chrome`) or on Hosting.
 
-Contrato: [docs/13](../docs/13-diseno-tecnico-mvp-firebase.md) · Plan: [docs/15](../docs/15-plan-flutter-mvp.md)
+Contrato: [docs/13](docs/13-diseno-tecnico-mvp-firebase.md) · Plan: [docs/15](docs/15-plan-flutter-mvp.md)
 
 **App online (Hosting):** https://circulo-mvp.web.app
 
