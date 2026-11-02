@@ -65,6 +65,29 @@ class PostRepository {
     });
   }
 
+  /// Deletes a post and its reactions (circle admin only; enforced by rules).
+  Future<void> deletePost({
+    required String circleId,
+    required String postId,
+  }) async {
+    if (postId.startsWith('local-')) return;
+    final postRef = _posts(circleId).doc(postId);
+    final reactions = await _reactions(circleId, postId).get();
+    var batch = _db.batch();
+    var ops = 0;
+    for (final doc in reactions.docs) {
+      batch.delete(doc.reference);
+      ops++;
+      if (ops >= 450) {
+        await batch.commit();
+        batch = _db.batch();
+        ops = 0;
+      }
+    }
+    batch.delete(postRef);
+    await batch.commit();
+  }
+
   /// Sets or clears the caller's reaction (one emoji per user).
   Future<void> toggleReaction({
     required String circleId,
@@ -86,7 +109,7 @@ class PostRepository {
     });
   }
 
-  Future<void> sendPost({
+  Future<String> sendPost({
     required String circleId,
     required String authorId,
     required PostType type,
@@ -134,6 +157,7 @@ class PostRepository {
     });
 
     await batch.commit();
+    return postRef.id;
   }
 
   Future<void> sendEmojiPost({
@@ -211,12 +235,14 @@ class PostRepository {
     await batch.commit();
   }
 
-  Future<void> sendPdfPost({
+  /// Returns post id and the written [meta] (for library mirror / linking).
+  Future<({String postId, Map<String, dynamic> meta})> sendPdfPost({
     required String circleId,
     required String authorId,
     required PickedFileBytes pdf,
     String caption = '',
     PostReplyTo? replyTo,
+    PostType type = PostType.media,
   }) async {
     final postRef = _posts(circleId).doc();
     final postId = postRef.id;
@@ -230,6 +256,7 @@ class PostRepository {
 
     final now = FieldValue.serverTimestamp();
     final body = caption.trim();
+    final typeName = type.name;
     final meta = <String, dynamic>{
       'kind': 'pdf',
       'storagePath': uploaded.storagePath,
@@ -243,7 +270,7 @@ class PostRepository {
     final batch = _db.batch();
     batch.set(postRef, {
       'authorId': authorId,
-      'type': PostType.media.name,
+      'type': typeName,
       'body': body,
       'meta': meta,
       if (replyTo != null) 'replyTo': replyTo.toMap(),
@@ -253,9 +280,9 @@ class PostRepository {
 
     batch.update(_db.collection('circles').doc(circleId), {
       'lastPost': {
-        'type': PostType.media.name,
+        'type': typeName,
         'body': lastPostPreviewBody(
-          type: PostType.media.name,
+          type: typeName,
           body: body,
           kind: 'pdf',
         ),
@@ -267,14 +294,17 @@ class PostRepository {
     });
 
     await batch.commit();
+    return (postId: postId, meta: meta);
   }
 
-  Future<void> sendAudioPost({
+  /// Returns post id and the written [meta] (for library mirror / linking).
+  Future<({String postId, Map<String, dynamic> meta})> sendAudioPost({
     required String circleId,
     required String authorId,
     required PickedFileBytes audio,
     String caption = '',
     PostReplyTo? replyTo,
+    PostType type = PostType.media,
   }) async {
     final postRef = _posts(circleId).doc();
     final postId = postRef.id;
@@ -288,6 +318,7 @@ class PostRepository {
 
     final now = FieldValue.serverTimestamp();
     final body = caption.trim();
+    final typeName = type.name;
     final meta = <String, dynamic>{
       'kind': 'audio',
       'storagePath': uploaded.storagePath,
@@ -301,7 +332,7 @@ class PostRepository {
     final batch = _db.batch();
     batch.set(postRef, {
       'authorId': authorId,
-      'type': PostType.media.name,
+      'type': typeName,
       'body': body,
       'meta': meta,
       if (replyTo != null) 'replyTo': replyTo.toMap(),
@@ -311,9 +342,9 @@ class PostRepository {
 
     batch.update(_db.collection('circles').doc(circleId), {
       'lastPost': {
-        'type': PostType.media.name,
+        'type': typeName,
         'body': lastPostPreviewBody(
-          type: PostType.media.name,
+          type: typeName,
           body: body,
           kind: 'audio',
         ),
@@ -325,14 +356,17 @@ class PostRepository {
     });
 
     await batch.commit();
+    return (postId: postId, meta: meta);
   }
 
-  Future<void> sendVideoPost({
+  /// Returns post id and the written [meta] (for library mirror / linking).
+  Future<({String postId, Map<String, dynamic> meta})> sendVideoPost({
     required String circleId,
     required String authorId,
     required PickedFileBytes video,
     String caption = '',
     PostReplyTo? replyTo,
+    PostType type = PostType.media,
   }) async {
     final postRef = _posts(circleId).doc();
     final postId = postRef.id;
@@ -346,6 +380,7 @@ class PostRepository {
 
     final now = FieldValue.serverTimestamp();
     final body = caption.trim();
+    final typeName = type.name;
     final meta = <String, dynamic>{
       'kind': 'video',
       'storagePath': uploaded.storagePath,
@@ -360,7 +395,7 @@ class PostRepository {
     final batch = _db.batch();
     batch.set(postRef, {
       'authorId': authorId,
-      'type': PostType.media.name,
+      'type': typeName,
       'body': body,
       'meta': meta,
       if (replyTo != null) 'replyTo': replyTo.toMap(),
@@ -370,9 +405,9 @@ class PostRepository {
 
     batch.update(_db.collection('circles').doc(circleId), {
       'lastPost': {
-        'type': PostType.media.name,
+        'type': typeName,
         'body': lastPostPreviewBody(
-          type: PostType.media.name,
+          type: typeName,
           body: body,
           kind: 'video',
         ),
@@ -384,5 +419,6 @@ class PostRepository {
     });
 
     await batch.commit();
+    return (postId: postId, meta: meta);
   }
 }

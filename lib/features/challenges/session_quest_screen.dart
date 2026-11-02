@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/brand_chrome.dart';
+import '../../core/widgets/mic_level_bar.dart';
 import '../../data/repositories/challenge_alarm_scheduler.dart';
 import '../../data/repositories/challenge_repository.dart';
 import '../../data/repositories/media_repository.dart';
@@ -35,6 +38,8 @@ class _SessionQuestScreenState extends ConsumerState<SessionQuestScreen> {
   bool _submitting = false;
   String? _error;
   bool _done = false;
+  StreamSubscription<double>? _levelSub;
+  double _micLevel = 0;
 
   @override
   void initState() {
@@ -49,8 +54,15 @@ class _SessionQuestScreenState extends ConsumerState<SessionQuestScreen> {
     }
   }
 
+  void _clearMicLevel() {
+    _levelSub?.cancel();
+    _levelSub = null;
+    _micLevel = 0;
+  }
+
   @override
   void dispose() {
+    _clearMicLevel();
     _textCtrl.dispose();
     super.dispose();
   }
@@ -75,8 +87,10 @@ class _SessionQuestScreenState extends ConsumerState<SessionQuestScreen> {
     try {
       if (_recording) {
         final note = await media.stopVoiceNote();
+        _clearMicLevel();
         setState(() {
           _recording = false;
+          _micLevel = 0;
           if (note != null) {
             _audioBytes = note.bytes;
             _audioName = note.fileName;
@@ -84,14 +98,22 @@ class _SessionQuestScreenState extends ConsumerState<SessionQuestScreen> {
         });
       } else {
         await media.startVoiceNote();
+        _levelSub?.cancel();
+        _levelSub = media.voiceLevelStream.listen((level) {
+          if (!mounted) return;
+          setState(() => _micLevel = level);
+        });
         setState(() {
           _recording = true;
+          _micLevel = 0;
           _error = null;
         });
       }
     } catch (_) {
+      _clearMicLevel();
       setState(() {
         _recording = false;
+        _micLevel = 0;
         _error = 'Microphone unavailable';
       });
     }
@@ -261,6 +283,10 @@ class _SessionQuestScreenState extends ConsumerState<SessionQuestScreen> {
                           ? 'Stop'
                           : (_audioBytes == null ? 'Voice' : 'Voice added')),
                     ),
+                    if (_recording) ...[
+                      const SizedBox(width: 12),
+                      MicLevelBar(level: _micLevel),
+                    ],
                   ],
                 ),
                 if (_imageBytes != null) ...[

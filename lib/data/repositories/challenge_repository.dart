@@ -64,6 +64,7 @@ class ChallengeRepository {
     Uint8List? mediaBytes,
     String? mediaFileName,
     String? mediaContentType,
+    bool skipLibraryMirror = false,
   }) async {
     final ref = _challenges(circleId).doc();
     String? storagePath;
@@ -105,6 +106,35 @@ class ChallengeRepository {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
+
+    if (!skipLibraryMirror) {
+      final libRef = _db.collection('libraryItems').doc();
+      final meta = <String, dynamic>{
+        'source': 'hoop',
+        'circleId': circleId,
+        'challengeId': ref.id,
+        'kind': challengeKindToString(kind),
+        'durationDays': durationDays,
+        'preAlarmMinutes': preAlarmMinutes,
+      };
+      if (mediaKind != null) {
+        meta['mediaKind'] = challengeMediaKindToString(mediaKind);
+      }
+      if (storagePath != null) meta['storagePath'] = storagePath;
+      if (contentType != null) meta['contentType'] = contentType;
+      if (mediaFileName != null) meta['fileName'] = mediaFileName;
+      if (instructions != null) meta['instructions'] = instructions.trim();
+      await libRef.set({
+        'ownerId': createdBy,
+        'kind': 'challenge',
+        'title': title.trim(),
+        'body': description?.trim() ?? '',
+        'meta': meta,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await ref.update({'libraryItemId': libRef.id});
+    }
     return ref.id;
   }
 
@@ -128,6 +158,33 @@ class ChallengeRepository {
         .where('userId', isEqualTo: userId)
         .where('circleId', isEqualTo: circleId)
         .where('status', isEqualTo: 'active')
+        .snapshots()
+        .map(
+          (snap) => snap.docs
+              .map((d) => ChallengeEnrollment.fromMap(d.id, d.data()))
+              .toList(),
+        );
+  }
+
+  /// All enrollments in a Hoop (admins can list via circleId).
+  Stream<List<ChallengeEnrollment>> watchEnrollmentsForCircle(String circleId) {
+    return _db
+        .collection('challengeEnrollments')
+        .where('circleId', isEqualTo: circleId)
+        .snapshots()
+        .map(
+          (snap) => snap.docs
+              .map((d) => ChallengeEnrollment.fromMap(d.id, d.data()))
+              .toList(),
+        );
+  }
+
+  Stream<List<ChallengeEnrollment>> watchEnrollmentsForChallenge(
+    String challengeId,
+  ) {
+    return _db
+        .collection('challengeEnrollments')
+        .where('challengeId', isEqualTo: challengeId)
         .snapshots()
         .map(
           (snap) => snap.docs
@@ -199,6 +256,25 @@ class ChallengeRepository {
         .collection('challengeSessions')
         .where('enrollmentId', isEqualTo: enrollmentId)
         .where('userId', isEqualTo: userId)
+        .snapshots()
+        .map((snap) {
+      final list = snap.docs
+          .map((d) => ChallengeSession.fromMap(d.id, d.data()))
+          .toList();
+      list.sort((a, b) => a.dayIndex.compareTo(b.dayIndex));
+      return list;
+    });
+  }
+
+  /// Admin view of sessions for an enrollment (scoped by circleId for rules).
+  Stream<List<ChallengeSession>> watchSessionsForEnrollmentAdmin({
+    required String circleId,
+    required String enrollmentId,
+  }) {
+    return _db
+        .collection('challengeSessions')
+        .where('circleId', isEqualTo: circleId)
+        .where('enrollmentId', isEqualTo: enrollmentId)
         .snapshots()
         .map((snap) {
       final list = snap.docs
@@ -344,4 +420,12 @@ class ChallengeRepository {
     if (missedIds.isNotEmpty) await batch.commit();
     return missedIds;
   }
+}
+
+/// Completed / total days for an enrollment from its sessions.
+({int completed, int total}) sessionRollup(List<ChallengeSession> sessions) {
+  final total = sessions.length;
+  final completed =
+      sessions.where((s) => s.state == SessionState.completed).length;
+  return (completed: completed, total: total);
 }

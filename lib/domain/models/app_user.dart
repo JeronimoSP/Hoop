@@ -7,7 +7,6 @@ class AppUser {
     this.googlePhotoURL,
     this.customPhotoURL,
     this.isPlatformAdmin = false,
-    this.isAgent = false,
     this.createdAt,
   });
 
@@ -22,8 +21,6 @@ class AppUser {
   /// Circle-only custom avatar in Firebase Storage (never written to Google).
   final String? customPhotoURL;
   final bool isPlatformAdmin;
-  /// Server-managed Cursor Cloud agent identity (no Google Sign-In).
-  final bool isAgent;
   final DateTime? createdAt;
 
   bool get hasCustomPhoto {
@@ -31,7 +28,7 @@ class AppUser {
     return u != null && u.isNotEmpty;
   }
 
-  /// Avatar to show in Circle: custom if set, otherwise Google.
+  /// Avatar to show in Hoop: custom if set, otherwise Google.
   String? get avatarURL {
     if (hasCustomPhoto) return customPhotoURL!.trim();
     final g = googlePhotoURL?.trim();
@@ -83,7 +80,6 @@ class AppUser {
       googlePhotoURL: resolvedGoogle,
       customPhotoURL: resolvedCustom,
       isPlatformAdmin: data['isPlatformAdmin'] as bool? ?? false,
-      isAgent: data['isAgent'] as bool? ?? false,
       createdAt: (data['createdAt'] as dynamic)?.toDate() as DateTime?,
     );
   }
@@ -98,7 +94,6 @@ class AppUser {
         // Keep photoURL as the effective Circle avatar for older readers.
         'photoURL': avatarURL,
         'isPlatformAdmin': isPlatformAdmin,
-        'isAgent': isAgent,
         'createdAt': createdAt,
       };
 }

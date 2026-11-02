@@ -54,7 +54,7 @@ export const notifyOnNewPost = onDocumentCreated(
     const db = getFirestore();
     const circleSnap = await db.doc(`circles/${circleId}`).get();
     const circleName =
-      (circleSnap.data()?.name as string | undefined)?.trim() || 'Circle';
+      (circleSnap.data()?.name as string | undefined)?.trim() || 'Hoop';
     const bodyText = postPreview(data);
 
     const memberships = await db
@@ -71,7 +71,7 @@ export const notifyOnNewPost = onDocumentCreated(
       return;
     }
 
-    // Denormalized unread badges on Circles home (exclude author).
+    // Denormalized unread badges on Hoops home (exclude author).
     const unreadBatch = db.batch();
     for (const uid of recipientIds) {
       const mid = `${circleId}_${uid}`;

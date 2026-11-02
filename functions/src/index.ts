@@ -20,11 +20,14 @@ initializeApp();
 
 export { notifyOnNewPost } from './notify_on_new_post.js';
 export { generateImageVariants } from './generate_image_variants.js';
-export {
-  bootstrapCircleAgent,
-  onCircleAgentPost,
-  agentAction,
-} from './circle_agent.js';
+export { exportGoogleDocPdf } from './export_google_doc_pdf.js';
+// Circle agent exports require Secret Manager (CURSOR_API_KEY). Re-enable when
+// that secret/API is available — omitting them so other functions can deploy.
+// export {
+//   bootstrapCircleAgent,
+//   onCircleAgentPost,
+//   agentAction,
+// } from './circle_agent.js';
 
 const PATH_RE =
   /^circles\/([^/]+)\/uploads\/([^/]+)\/([^/]+)\/([^/]+)$/;

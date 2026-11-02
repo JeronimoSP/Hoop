@@ -18,6 +18,47 @@
       ]
     },
     {
+      "collectionGroup": "assignmentBlocks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "circleId", "order": "ASCENDING" },
+        { "fieldPath": "assignmentId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "blockAnswers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "circleId", "order": "ASCENDING" },
+        { "fieldPath": "assignmentId", "order": "ASCENDING" },
+        { "fieldPath": "userId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "blockAnswers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "circleId", "order": "ASCENDING" },
+        { "fieldPath": "assignmentId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "assignmentSubmissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "circleId", "order": "ASCENDING" },
+        { "fieldPath": "userId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "assignmentSubmissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "circleId", "order": "ASCENDING" },
+        { "fieldPath": "assignmentId", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "progressLogs",
       "queryScope": "COLLECTION",
       "fields": [
@@ -80,6 +121,22 @@
       "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "scheduledAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "challengeSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "circleId", "order": "ASCENDING" },
+        { "fieldPath": "enrollmentId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "libraryItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
       ]
     }
   ],

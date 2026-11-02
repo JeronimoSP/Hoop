@@ -103,7 +103,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await ref.read(userRepositoryProvider).promoteToPlatformAdmin(uid);
       setState(
         () => _message =
-            'You are now a facilitator. Go home to open a Circle with your community.',
+            'You are now a facilitator. Go home to open a Hoop with your community.',
       );
     } catch (e) {
       setState(() => _message = 'Could not update your role. Please try again.');
@@ -189,7 +189,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   const SizedBox(height: 8),
                   const Center(
                     child: Text(
-                      'Using a Circle photo (Google account unchanged)',
+                      'Using a Hoop photo (Google account unchanged)',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 12,
@@ -219,7 +219,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   decoration: const InputDecoration(
                     labelText: 'Alias',
                     hintText: 'Optional nickname shown with your name',
-                    helperText: 'Shown as Name (alias) across Circle',
+                    helperText: 'Shown as Name (alias) across Hoop',
                   ),
                   onChanged: (_) {
                     if (!_aliasDirty) setState(() => _aliasDirty = true);
@@ -244,11 +244,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ],
             ),
           ),
+          ListTile(
+            leading: const Icon(Icons.collections_bookmark_outlined),
+            title: const Text('Content library'),
+            subtitle: const Text(
+              'Resources, challenges, and assignment templates',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/library'),
+          ),
           if (user?.isPlatformAdmin == true)
             const ListTile(
               leading: Icon(Icons.admin_panel_settings_outlined),
               title: Text('Facilitator'),
-              subtitle: Text('You can create Circles and support your community'),
+              subtitle: Text('You can create Hoops and support your community'),
             ),
           if (showPromote) ...[
             const Divider(color: AppColors.hairline),
@@ -256,7 +265,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               leading: const Icon(Icons.verified_user_outlined),
               title: const Text('Become a facilitator'),
               subtitle: const Text(
-                'Turn on the role to create Circles and invite others',
+                'Turn on the role to create Hoops and invite others',
               ),
               trailing: _busy
                   ? const SizedBox(

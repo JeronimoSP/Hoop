@@ -38,7 +38,7 @@ class _CreateCircleScreenState extends ConsumerState<CreateCircleScreen> {
     final user = ref.read(authStateProvider).asData?.value;
     final appUser = ref.read(currentAppUserProvider).asData?.value;
     if (user == null || appUser?.isPlatformAdmin != true) {
-      setState(() => _error = 'Only a facilitator can create Circles');
+      setState(() => _error = 'Only a facilitator can create Hoops');
       return;
     }
 
@@ -82,7 +82,7 @@ class _CreateCircleScreenState extends ConsumerState<CreateCircleScreen> {
     return Scaffold(
       appBar: brandAppBar(
         title: Text(
-          'New Circle',
+          'New Hoop',
           style: brandDisplay(fontWeight: FontWeight.w600),
         ),
       ),

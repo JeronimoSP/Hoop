@@ -14,15 +14,20 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/brand_chrome.dart';
 import '../../core/utils/download_helper.dart';
+import '../../core/widgets/mic_level_bar.dart';
 import '../../core/widgets/user_identity.dart';
-import '../../data/repositories/agent_repository.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/circle_repository.dart';
+import '../../data/repositories/library_repository.dart';
 import '../../data/repositories/media_repository.dart';
 import '../../data/repositories/post_repository.dart';
 import '../../domain/models/circle.dart';
+import '../../domain/models/library_item.dart';
 import '../../domain/models/post.dart';
-import '../coins/assignment_sheet.dart';
+import '../challenges/challenges_providers.dart';
+import '../coins/coin_rail.dart';
+import '../../data/repositories/assignment_repository.dart';
+import 'resource_open.dart';
 
 /// Stream media preview max edge (images / PDF covers).
 const double kStreamPreviewMaxSide = 320;
@@ -43,6 +48,14 @@ final _membershipProvider = StreamProvider.autoDispose
         circleId: key.circleId,
         userId: key.userId,
       );
+});
+
+final _hasAssignmentsProvider =
+    StreamProvider.autoDispose.family<bool, String>((ref, circleId) {
+  return ref
+      .watch(assignmentRepositoryProvider)
+      .watchAssignmentsForAdmin(circleId)
+      .map((list) => list.isNotEmpty);
 });
 
 final _postsProvider =
@@ -71,6 +84,8 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
   DateTime? _recordStartedAt;
   Offset? _micDownOrigin;
   Timer? _recordTicker;
+  StreamSubscription<double>? _levelSub;
+  double _micLevel = 0;
   int _lastFeedCount = 0;
   bool _forceScrollToBottom = false;
   bool _didInitialScroll = false;
@@ -107,9 +122,16 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
     }
   }
 
+  void _clearMicLevel() {
+    _levelSub?.cancel();
+    _levelSub = null;
+    _micLevel = 0;
+  }
+
   @override
   void dispose() {
     _recordTicker?.cancel();
+    _clearMicLevel();
     _scrollController.dispose();
     _composer.dispose();
     _composerFocus.dispose();
@@ -202,7 +224,11 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
     }
   }
 
-  Future<void> _showPostActions(CirclePost post, String uid) async {
+  Future<void> _showPostActions(
+    CirclePost post,
+    String uid, {
+    required bool isAdmin,
+  }) async {
     if (post.id.startsWith('local-')) return;
     await showModalBottomSheet<void>(
       context: context,
@@ -253,12 +279,59 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
                     _setReply(post);
                   },
                 ),
+                if (isAdmin)
+                  ListTile(
+                    leading: const Icon(Icons.delete_outline, color: AppColors.danger),
+                    title: const Text(
+                      'Delete post',
+                      style: TextStyle(color: AppColors.danger),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _confirmDeletePost(post);
+                    },
+                  ),
               ],
             ),
           ),
         );
       },
     );
+  }
+
+  Future<void> _confirmDeletePost(CirclePost post) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Delete post?'),
+          content: const Text(
+            'This removes the post for everyone in the Hoop. This cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await ref.read(postRepositoryProvider).deletePost(
+            circleId: widget.circleId,
+            postId: post.id,
+          );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _sendError = _friendlySendError(e));
+    }
   }
 
   Future<void> _pickReactionEmoji(String postId, String uid) async {
@@ -524,10 +597,16 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
         }
         setState(() {});
       });
+      _levelSub?.cancel();
+      _levelSub = ref.read(mediaRepositoryProvider).voiceLevelStream.listen((level) {
+        if (!mounted) return;
+        setState(() => _micLevel = level);
+      });
       setState(() {
         _recording = true;
         _recordCancelHint = false;
         _recordStartedAt = DateTime.now();
+        _micLevel = 0;
         _sendError = null;
       });
     } catch (e) {
@@ -539,6 +618,7 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
     if (!_recording) return;
     _recordTicker?.cancel();
     _recordTicker = null;
+    _clearMicLevel();
     setState(() => _recording = false);
     try {
       final picked = await ref.read(mediaRepositoryProvider).stopVoiceNote(
@@ -599,8 +679,7 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.videocam_outlined),
-                title: const Text('Video'),
-                subtitle: const Text('Up to 60 s'),
+                title: const Text('Short Video'),
                 onTap: () {
                   Navigator.pop(ctx);
                   _attachVideo(uid);
@@ -608,8 +687,7 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.picture_as_pdf_outlined),
-                title: const Text('Document'),
-                subtitle: const Text('PDF'),
+                title: const Text('PDF Doc'),
                 onTap: () {
                   Navigator.pop(ctx);
                   _attachPdf(uid);
@@ -617,9 +695,16 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
               ),
               if (isAdmin) ...[
                 ListTile(
+                  leading: const Icon(Icons.folder_outlined),
+                  title: const Text('Resource'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showResourceMenu(uid);
+                  },
+                ),
+                ListTile(
                   leading: const Icon(Icons.spa_outlined),
                   title: const Text('Challenge'),
-                  subtitle: const Text('Create a media or quest challenge'),
                   onTap: () {
                     Navigator.pop(ctx);
                     context.push('/circles/${widget.circleId}/challenges/new');
@@ -628,13 +713,10 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
                 ListTile(
                   leading: const Icon(Icons.assignment_outlined),
                   title: const Text('Assignment'),
-                  subtitle: const Text('Create objectives for the circle'),
                   onTap: () {
                     Navigator.pop(ctx);
-                    showCreateAssignmentDialog(
-                      context: context,
-                      ref: ref,
-                      circleId: widget.circleId,
+                    context.push(
+                      '/circles/${widget.circleId}/assignments/new',
                     );
                   },
                 ),
@@ -644,6 +726,326 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
         );
       },
     );
+  }
+
+  void _showResourceMenu(String uid) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.link),
+                title: const Text('Link'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _publishLinkResource(uid, kind: 'link');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.description_outlined),
+                title: const Text('Google Doc'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _publishLinkResource(uid, kind: 'googleDoc');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.picture_as_pdf_outlined),
+                title: const Text('PDF'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _attachResourcePdf(uid);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.audiotrack_outlined),
+                title: const Text('Audio'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _attachResourceAudio(uid);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.videocam_outlined),
+                title: const Text('Video'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _attachResourceVideo(uid);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _publishLinkResource(
+    String uid, {
+    required String kind,
+  }) async {
+    final titleCtrl = TextEditingController();
+    final urlCtrl = TextEditingController();
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(kind == 'googleDoc' ? 'Google Doc' : 'Link'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Title (optional)',
+                ),
+                textCapitalization: TextCapitalization.sentences,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: urlCtrl,
+                decoration: InputDecoration(
+                  labelText: 'URL',
+                  hintText: kind == 'googleDoc'
+                      ? 'https://docs.google.com/document/d/…'
+                      : 'https://…',
+                ),
+                keyboardType: TextInputType.url,
+                autofocus: true,
+              ),
+              if (kind == 'googleDoc') ...[
+                const SizedBox(height: 10),
+                const Text(
+                  'Share the Doc as “Anyone with the link” (Viewer). '
+                  'It will be converted to PDF automatically.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Publish'),
+            ),
+          ],
+        );
+      },
+    );
+    final title = titleCtrl.text.trim();
+    final url = urlCtrl.text.trim();
+    titleCtrl.dispose();
+    urlCtrl.dispose();
+    if (submitted != true || !mounted) return;
+
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !(uri.isScheme('http') || uri.isScheme('https')) ||
+        url.isEmpty) {
+      setState(() => _sendError = 'Enter a valid http(s) URL.');
+      return;
+    }
+    if (kind == 'googleDoc' &&
+        !RegExp(r'/document/d/[a-zA-Z0-9_-]+').hasMatch(url)) {
+      setState(
+        () => _sendError =
+            'Use a Google Docs link (docs.google.com/document/d/…).',
+      );
+      return;
+    }
+
+    if (_sending) return;
+    setState(() {
+      _sendError = null;
+      _sending = true;
+      _forceScrollToBottom = true;
+    });
+    _scrollToBottom();
+    try {
+      final meta = <String, dynamic>{
+        'kind': kind,
+        'url': url,
+        if (kind == 'googleDoc') 'exportStatus': 'pending',
+      };
+      final body = title.isNotEmpty ? title : url;
+      final postId = await ref.read(postRepositoryProvider).sendPost(
+            circleId: widget.circleId,
+            authorId: uid,
+            type: PostType.resource,
+            body: body,
+            meta: meta,
+          );
+      await _mirrorResourceToLibrary(
+        ownerId: uid,
+        title: body,
+        body: '',
+        postId: postId,
+        postMeta: meta,
+      );
+    } catch (e) {
+      if (mounted) setState(() => _sendError = _friendlySendError(e));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _mirrorResourceToLibrary({
+    required String ownerId,
+    required String title,
+    required String body,
+    required String postId,
+    required Map<String, dynamic> postMeta,
+  }) async {
+    try {
+      await ref.read(libraryRepositoryProvider).mirrorFromHoop(
+            ownerId: ownerId,
+            kind: LibraryItemKind.resource,
+            title: title,
+            body: body,
+            meta: {
+              ...postMeta,
+              'circleId': widget.circleId,
+              'postId': postId,
+              'source': 'hoop',
+            },
+          );
+    } catch (_) {
+      // Best-effort catalog mirror; Hoop post already succeeded.
+    }
+  }
+
+  Future<void> _attachResourcePdf(String uid) async {
+    if (_sending) return;
+    setState(() {
+      _sendError = null;
+      _sending = true;
+      _pendingLocalId = 'local-resource-pdf-${DateTime.now().millisecondsSinceEpoch}';
+      _forceScrollToBottom = true;
+    });
+    _scrollToBottom();
+    try {
+      final picked = await ref.read(mediaRepositoryProvider).pickPdf();
+      if (picked == null) {
+        setState(() => _pendingLocalId = null);
+        return;
+      }
+      final created = await ref.read(postRepositoryProvider).sendPdfPost(
+            circleId: widget.circleId,
+            authorId: uid,
+            pdf: picked,
+            type: PostType.resource,
+          );
+      await _mirrorResourceToLibrary(
+        ownerId: uid,
+        title: picked.fileName,
+        body: '',
+        postId: created.postId,
+        postMeta: created.meta,
+      );
+    } catch (e) {
+      setState(() => _sendError = _friendlySendError(e));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sending = false;
+          _pendingLocalId = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _attachResourceAudio(String uid) async {
+    if (_sending) return;
+    setState(() {
+      _sendError = null;
+      _sending = true;
+      _pendingLocalId =
+          'local-resource-audio-${DateTime.now().millisecondsSinceEpoch}';
+      _forceScrollToBottom = true;
+    });
+    _scrollToBottom();
+    try {
+      final picked = await ref.read(mediaRepositoryProvider).pickAudioFile();
+      if (picked == null) {
+        setState(() => _pendingLocalId = null);
+        return;
+      }
+      final created = await ref.read(postRepositoryProvider).sendAudioPost(
+            circleId: widget.circleId,
+            authorId: uid,
+            audio: picked,
+            type: PostType.resource,
+          );
+      await _mirrorResourceToLibrary(
+        ownerId: uid,
+        title: picked.fileName,
+        body: '',
+        postId: created.postId,
+        postMeta: created.meta,
+      );
+    } catch (e) {
+      setState(() => _sendError = _friendlySendError(e));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sending = false;
+          _pendingLocalId = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _attachResourceVideo(String uid) async {
+    if (_sending) return;
+    setState(() {
+      _sendError = null;
+      _sending = true;
+      _pendingLocalId =
+          'local-resource-video-${DateTime.now().millisecondsSinceEpoch}';
+      _forceScrollToBottom = true;
+    });
+    _scrollToBottom();
+    try {
+      final picked =
+          await ref.read(mediaRepositoryProvider).pickCameraVideo();
+      if (picked == null) {
+        setState(() => _pendingLocalId = null);
+        return;
+      }
+      final created = await ref.read(postRepositoryProvider).sendVideoPost(
+            circleId: widget.circleId,
+            authorId: uid,
+            video: picked,
+            type: PostType.resource,
+          );
+      await _mirrorResourceToLibrary(
+        ownerId: uid,
+        title: picked.fileName,
+        body: '',
+        postId: created.postId,
+        postMeta: created.meta,
+      );
+    } catch (e) {
+      setState(() => _sendError = _friendlySendError(e));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sending = false;
+          _pendingLocalId = null;
+        });
+      }
+    }
   }
 
   String _friendlySendError(Object e) {
@@ -685,31 +1087,73 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
             _membershipProvider((circleId: widget.circleId, userId: uid)),
           );
     final isAdmin = membershipAsync.asData?.value?.isAdmin == true;
+    final hasChallenges =
+        (ref.watch(challengesProvider(widget.circleId)).asData?.value ??
+                const [])
+            .isNotEmpty;
+    final hasAssignments =
+        ref.watch(_hasAssignmentsProvider(widget.circleId)).asData?.value ==
+            true;
+    final hasResources = (ref.watch(_postsProvider(widget.circleId)).asData
+                ?.value ??
+            const <CirclePost>[])
+        .any((p) => p.type == PostType.resource);
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: brandAppBar(
         title: circleAsync.when(
           data: (c) => Text(
-            c?.name ?? 'Circle',
+            c?.name ?? 'Hoop',
             style: brandDisplay(fontWeight: FontWeight.w600),
           ),
           loading: () => const Text('…'),
-          error: (_, _) => const Text('Circle'),
+          error: (_, _) => const Text('Hoop'),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Challenges',
-            icon: const Icon(Icons.spa_outlined),
-            onPressed: () =>
-                context.push('/circles/${widget.circleId}/challenges'),
-          ),
+          if (hasChallenges)
+            IconButton(
+              tooltip: 'Challenges',
+              icon: const Icon(Icons.spa_outlined),
+              onPressed: () =>
+                  context.push('/circles/${widget.circleId}/challenges'),
+            ),
+          if (hasAssignments)
+            IconButton(
+              tooltip: 'Assignments',
+              icon: const Icon(Icons.workspace_premium_outlined),
+              onPressed: () =>
+                  context.push('/circles/${widget.circleId}/assignments'),
+            ),
+          if (hasResources)
+            IconButton(
+              tooltip: 'Resources',
+              icon: const Icon(Icons.menu_book_outlined),
+              onPressed: () =>
+                  context.push('/circles/${widget.circleId}/resources'),
+            ),
           IconButton(
             icon: const Icon(Icons.info_outline),
             onPressed: () => context.push('/circles/${widget.circleId}/info'),
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const Positioned.fill(
+            child: Opacity(
+              opacity: 0.20,
+              child: Image(
+                image: AssetImage('assets/thread/spiral_bg.jpg'),
+                repeat: ImageRepeat.repeat,
+                fit: BoxFit.none,
+                alignment: Alignment.topLeft,
+                filterQuality: FilterQuality.medium,
+              ),
+            ),
+          ),
+          Column(
         children: [
           Expanded(
             child: postsAsync.when(
@@ -740,6 +1184,13 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
                         child: _StickyHeader(
                           instructions: sticky,
                           resources: resources,
+                          onLongPressPost: uid == null
+                              ? null
+                              : (post) => _showPostActions(
+                                    post,
+                                    uid,
+                                    isAdmin: isAdmin,
+                                  ),
                         ),
                       ),
                     if (feed.isEmpty)
@@ -765,7 +1216,11 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
                               uid: uid,
                               onLongPress: uid == null
                                   ? null
-                                  : () => _showPostActions(post, uid),
+                                  : () => _showPostActions(
+                                        post,
+                                        uid,
+                                        isAdmin: isAdmin,
+                                      ),
                               onReply: uid == null
                                   ? null
                                   : () => _setReply(post),
@@ -845,16 +1300,20 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
                     _recordElapsedLabel,
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
+                  const SizedBox(width: 12),
+                  MicLevelBar(level: _micLevel),
                   const Spacer(),
-                  Text(
-                    _recordCancelHint
-                        ? 'Release to cancel'
-                        : 'Slide to cancel',
-                    style: TextStyle(
-                      color: _recordCancelHint
-                          ? AppColors.danger
-                          : AppColors.textSecondary,
-                      fontSize: 12,
+                  IconButton(
+                    tooltip: 'Stop',
+                    onPressed: uid == null
+                        ? null
+                        : () => _finishVoice(uid, cancel: false),
+                    icon: const Icon(Icons.stop_circle, size: 32),
+                    color: AppColors.danger,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 40,
                     ),
                   ),
                 ],
@@ -868,6 +1327,7 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
                 style: const TextStyle(color: AppColors.danger, fontSize: 12),
               ),
             ),
+          if (!_recording) CoinRail(circleId: widget.circleId),
           _ComposerBar(
             controller: _composer,
             focusNode: _composerFocus,
@@ -910,22 +1370,26 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
                 : () => _finishVoice(uid, cancel: true),
           ),
         ],
+          ),
+        ],
       ),
     );
   }
 }
 
-class _StickyHeader extends StatelessWidget {
+class _StickyHeader extends ConsumerWidget {
   const _StickyHeader({
     required this.instructions,
     required this.resources,
+    this.onLongPressPost,
   });
 
   final List<CirclePost> instructions;
   final List<CirclePost> resources;
+  final ValueChanged<CirclePost>? onLongPressPost;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       width: double.infinity,
       color: AppColors.bgElevated,
@@ -934,47 +1398,89 @@ class _StickyHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           for (final p in instructions)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 6),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.hairline),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Instruction',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.accent,
+            GestureDetector(
+              onLongPress: onLongPressPost == null
+                  ? null
+                  : () => onLongPressPost!(p),
+              child: Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.hairline),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Instruction',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.accent,
+                      ),
                     ),
-                  ),
-                  Text(p.body, style: messageBodyStyle()),
-                ],
+                    Text(p.body, style: messageBodyStyle()),
+                  ],
+                ),
               ),
             ),
           for (final r in resources)
             ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.link, color: AppColors.accent),
-              title: Text(r.body, maxLines: 1, overflow: TextOverflow.ellipsis),
-              onTap: () async {
-                final url = r.meta['url']?.toString() ?? r.body;
-                final uri = Uri.tryParse(url);
-                if (uri != null && await canLaunchUrl(uri)) {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-                }
-              },
+              leading: r.kind == 'googleDoc' &&
+                      (r.meta['exportStatus']?.toString() ?? '') == 'pending'
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      resourceKindIcon(r),
+                      color: r.kind == 'googleDoc' &&
+                              (r.meta['exportStatus']?.toString() ?? '') ==
+                                  'failed'
+                          ? AppColors.danger
+                          : AppColors.accent,
+                    ),
+              title: Text(
+                resourceTitle(r),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                resourceKindLabel(r),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: r.kind == 'googleDoc' &&
+                          (r.meta['exportStatus']?.toString() ?? '') ==
+                              'failed'
+                      ? AppColors.danger
+                      : AppColors.textSecondary,
+                ),
+              ),
+              onTap: () => openResourcePost(ref, r),
+              onLongPress: onLongPressPost == null
+                  ? null
+                  : () => onLongPressPost!(r),
             ),
         ],
       ),
     );
   }
+}
+
+bool _isLinkResource(CirclePost post) {
+  if (post.type != PostType.resource) return false;
+  if (post.isPdfMedia || post.isAudioMedia || post.isVideoMedia) {
+    return false;
+  }
+  final kind = post.kind;
+  if (kind == 'link' || kind == 'googleDoc') return true;
+  final url = post.meta['url']?.toString();
+  return url != null && url.isNotEmpty;
 }
 
 class _PostBubble extends ConsumerWidget {
@@ -1100,7 +1606,10 @@ class _PostBubble extends ConsumerWidget {
                       const SizedBox(height: 6),
                       _VideoPostBubble(post: post),
                     ],
-                    if (post.body.isNotEmpty) ...[
+                    if (_isLinkResource(post)) ...[
+                      const SizedBox(height: 6),
+                      _ResourceLinkCard(post: post),
+                    ] else if (post.body.isNotEmpty) ...[
                       if (post.isImageMedia ||
                           post.isPdfMedia ||
                           post.isAudioMedia ||
@@ -1181,7 +1690,6 @@ class _PostBubble extends ConsumerWidget {
               loading: () => const SizedBox.shrink(),
               error: (_, _) => const SizedBox.shrink(),
             ),
-            _AgentActionRow(circleId: circleId, post: post),
           ],
         ),
       ),
@@ -1195,141 +1703,154 @@ class _PostBubble extends ConsumerWidget {
   }
 }
 
-class _AgentActionRow extends ConsumerStatefulWidget {
-  const _AgentActionRow({
-    required this.circleId,
-    required this.post,
-  });
+class _ResourceLinkCard extends StatelessWidget {
+  const _ResourceLinkCard({required this.post});
 
-  final String circleId;
   final CirclePost post;
 
-  @override
-  ConsumerState<_AgentActionRow> createState() => _AgentActionRowState();
-}
+  String get _exportStatus =>
+      post.meta['exportStatus']?.toString() ?? '';
 
-class _AgentActionRowState extends ConsumerState<_AgentActionRow> {
-  String? _busyActionId;
+  String? get _exportError {
+    final v = post.meta['exportError']?.toString();
+    if (v == null || v.isEmpty) return null;
+    return v;
+  }
 
-  Future<void> _onAction(String actionId) async {
-    final post = widget.post;
-    if (actionId == 'open_pr') {
-      final url = post.agentPrUrl;
-      if (url == null || url.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No PR URL yet')),
-          );
-        }
-        return;
-      }
-      final uri = Uri.tryParse(url);
-      if (uri == null) return;
+  String get _url {
+    final fromMeta = post.meta['url']?.toString().trim();
+    if (fromMeta != null && fromMeta.isNotEmpty) return fromMeta;
+    final source = post.meta['sourceUrl']?.toString().trim();
+    if (source != null && source.isNotEmpty) return source;
+    return post.body.trim();
+  }
+
+  String get _title {
+    final body = post.body.trim();
+    if (body.isNotEmpty && body != _url) return body;
+    return post.kind == 'googleDoc' ? 'Google Doc' : 'Open link';
+  }
+
+  Future<void> _open() async {
+    final uri = Uri.tryParse(_url);
+    if (uri == null) return;
+    if (!uri.isScheme('http') && !uri.isScheme('https')) return;
+    if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-      return;
-    }
-
-    String? followUp;
-    if (actionId == 'continue') {
-      followUp = await showDialog<String>(
-        context: context,
-        builder: (ctx) {
-          final ctrl = TextEditingController(text: 'Continue from last result');
-          return AlertDialog(
-            title: const Text('Continue'),
-            content: TextField(
-              controller: ctrl,
-              decoration: const InputDecoration(
-                labelText: 'Follow-up prompt',
-              ),
-              maxLines: 3,
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-                child: const Text('Continue'),
-              ),
-            ],
-          );
-        },
-      );
-      if (followUp == null || followUp.isEmpty) return;
-    }
-
-    setState(() => _busyActionId = actionId);
-    try {
-      await ref.read(agentRepositoryProvider).agentAction(
-            circleId: widget.circleId,
-            postId: post.id,
-            actionId: actionId,
-            followUp: followUp,
-          );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              actionId == 'retry' ? 'Retry started' : 'Continue started',
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Agent action failed: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busyActionId = null);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final author = ref.watch(appUserProvider(widget.post.authorId)).asData?.value;
-    final show = widget.post.hasAgentMeta || author?.isAgent == true;
-    if (!show) return const SizedBox.shrink();
+    final isDoc = post.kind == 'googleDoc';
+    final pending = isDoc && _exportStatus == 'pending';
+    final failed = isDoc && _exportStatus == 'failed';
 
-    final actions = widget.post.agentActions.isNotEmpty
-        ? widget.post.agentActions
-        : const [
-            (id: 'continue', label: 'Continue'),
-            (id: 'open_pr', label: 'Open PR'),
-            (id: 'retry', label: 'Retry'),
-          ];
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Wrap(
-        spacing: 6,
-        runSpacing: 4,
-        children: [
-          for (final a in actions)
-            OutlinedButton(
-              onPressed: _busyActionId != null
-                  ? null
-                  : (a.id == 'open_pr' &&
-                          (widget.post.agentPrUrl == null ||
-                              widget.post.agentPrUrl!.isEmpty))
-                      ? null
-                      : () => _onAction(a.id),
-              style: OutlinedButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _open,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.hairline),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (pending)
+                const Padding(
+                  padding: EdgeInsets.only(top: 2),
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else
+                Icon(
+                  isDoc ? Icons.description_outlined : Icons.link,
+                  color: failed ? AppColors.danger : AppColors.accent,
+                  size: 22,
+                ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      pending
+                          ? 'Converting to PDF…'
+                          : failed
+                              ? 'PDF export failed'
+                              : _title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: messageBodyStyle(
+                        color: failed
+                            ? AppColors.danger
+                            : AppColors.accent,
+                      ).copyWith(
+                        fontWeight: FontWeight.w600,
+                        decoration: pending
+                            ? TextDecoration.none
+                            : TextDecoration.underline,
+                        decorationColor: failed
+                            ? AppColors.danger
+                            : AppColors.accent,
+                      ),
+                    ),
+                    if (failed && _exportError != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        _exportError!,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                    if (!pending && _title != _url) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        _url,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                    if (pending || failed) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Open original Doc',
+                        style: messageBodyStyle(
+                          color: AppColors.accent,
+                        ).copyWith(
+                          fontSize: 12,
+                          decoration: TextDecoration.underline,
+                          decorationColor: AppColors.accent,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              child: _busyActionId == a.id
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(a.label),
-            ),
-        ],
+              const Icon(
+                Icons.open_in_new,
+                size: 16,
+                color: AppColors.textSecondary,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2282,7 +2803,10 @@ class _ComposerBar extends ConsumerWidget {
                   )
                 else
                   Listener(
-                    onPointerDown: sending ? null : onMicPointerDown,
+                    // Block starting another take while recording; keep
+                    // move/up/cancel so hold-to-release still finishes.
+                    onPointerDown:
+                        sending || recording ? null : onMicPointerDown,
                     onPointerMove: sending ? null : onMicPointerMove,
                     onPointerUp: sending ? null : onMicPointerUp,
                     onPointerCancel: sending
@@ -2290,14 +2814,17 @@ class _ComposerBar extends ConsumerWidget {
                         : (_) => onMicPointerCancel?.call(),
                     child: IconButton.filled(
                       style: IconButton.styleFrom(
-                        backgroundColor:
-                            recording ? AppColors.danger : AppColors.accent,
+                        backgroundColor: recording
+                            ? AppColors.accent.withValues(alpha: 0.35)
+                            : AppColors.accent,
                       ),
-                      onPressed: () {},
-                      tooltip: 'Hold to record',
+                      onPressed: recording ? null : () {},
+                      tooltip: recording ? 'Recording…' : 'Hold to record',
                       icon: Icon(
-                        recording ? Icons.mic : Icons.mic_none,
-                        color: Colors.white,
+                        Icons.mic_none,
+                        color: recording
+                            ? Colors.white.withValues(alpha: 0.5)
+                            : Colors.white,
                       ),
                     ),
                   ),

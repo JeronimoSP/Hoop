@@ -102,7 +102,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        'Circle',
+                        'Hoop',
                         style: brandDisplay(
                           fontSize: 44,
                           fontWeight: FontWeight.w600,

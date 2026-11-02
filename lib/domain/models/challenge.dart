@@ -213,6 +213,17 @@ EnrollmentStatus enrollmentStatusFromString(String value) {
   }
 }
 
+String enrollmentStatusToString(EnrollmentStatus status) {
+  switch (status) {
+    case EnrollmentStatus.active:
+      return 'active';
+    case EnrollmentStatus.completed:
+      return 'completed';
+    case EnrollmentStatus.cancelled:
+      return 'cancelled';
+  }
+}
+
 SessionState sessionStateFromString(String value) {
   switch (value) {
     case 'in_progress':

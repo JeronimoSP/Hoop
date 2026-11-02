@@ -216,7 +216,7 @@ class MessagingRepository {
 
   Future<void> _showForeground(RemoteMessage message) async {
     final title =
-        message.notification?.title ?? message.data['circleId'] ?? 'Circle';
+        message.notification?.title ?? message.data['circleId'] ?? 'Hoop';
     final body = message.notification?.body ?? 'New message';
     final circleId = message.data['circleId'] as String? ?? '';
 

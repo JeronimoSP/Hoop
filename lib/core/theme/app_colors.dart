@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Visual tokens — Evocative World (company) × Circle (product).
+/// Visual tokens — Evocative World (company) × Hoop (product).
 /// See docs/10-diseno-visual.md.
 abstract final class AppColors {
   static const bgApp = Color(0xFFF2F4F1);
@@ -23,7 +23,7 @@ abstract final class AppColors {
   static const coinInProgress = Color(0xFF8FB0B8);
   static const coinCompleted = Color(0xFF0D4A5B);
   static const danger = Color(0xFFB42318);
-  /// Unread count badge on Circles home list.
+  /// Unread count badge on Hoops home list.
   static const unreadBadge = Color(0xFF6B3FA0);
   static const authGradientTop = Color(0xFF0D4A5B);
   static const authGradientMid = Color(0xFF1A3D6D);

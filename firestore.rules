@@ -54,18 +54,15 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if signedIn();
       allow create: if signedIn() && uid() == userId
-        && request.resource.data.isPlatformAdmin == false
-        && request.resource.data.get('isAgent', false) == false;
-      allow update: if signedIn() && uid() == userId
-        && request.resource.data.get('isAgent', false) == resource.data.get('isAgent', false)
-        && (
-          request.resource.data.isPlatformAdmin == resource.data.isPlatformAdmin
-          || (
-            selfPromoteEnabled()
-            && resource.data.isPlatformAdmin == false
-            && request.resource.data.isPlatformAdmin == true
-          )
-        );
+        && request.resource.data.isPlatformAdmin == false;
+      allow update: if signedIn() && uid() == userId && (
+        request.resource.data.isPlatformAdmin == resource.data.isPlatformAdmin
+        || (
+          selfPromoteEnabled()
+          && resource.data.isPlatformAdmin == false
+          && request.resource.data.isPlatformAdmin == true
+        )
+      );
       allow delete: if false;
 
       match /fcmTokens/{tokenId} {
@@ -83,7 +80,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['lastPost', 'updatedAt'])
         );
-      allow delete: if false;
+      allow delete: if isCircleAdmin(circleId);
 
       match /posts/{postId} {
         allow read: if isMember(circleId);
@@ -93,7 +90,8 @@ service cloud.firestore {
             !(request.resource.data.type in ['instruction', 'resource'])
             || isCircleAdmin(circleId)
           );
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if isCircleAdmin(circleId);
 
         // One reaction doc per user (doc id = uid). Toggle = set or delete.
         match /reactions/{reactionUserId} {
@@ -113,13 +111,7 @@ service cloud.firestore {
         allow create: if isCircleAdmin(circleId)
           && request.resource.data.createdBy == uid();
         allow update: if isCircleAdmin(circleId);
-        allow delete: if false;
-      }
-
-      // Cursor Cloud agent jobs — members read; only Admin SDK (Functions) writes.
-      match /agentJobs/{jobId} {
-        allow read: if isMember(circleId);
-        allow create, update, delete: if false;
+        allow delete: if isCircleAdmin(circleId);
       }
     }
 
@@ -141,7 +133,7 @@ service cloud.firestore {
       allow update: if signedIn()
         && resource.data.userId == uid()
         && request.resource.data.userId == uid();
-      allow delete: if false;
+      allow delete: if isCircleAdmin(resource.data.circleId);
     }
 
     match /challengeSessions/{sessionId} {
@@ -160,7 +152,7 @@ service cloud.firestore {
       allow update: if signedIn()
         && resource.data.userId == uid()
         && request.resource.data.userId == uid();
-      allow delete: if false;
+      allow delete: if isCircleAdmin(resource.data.circleId);
     }
 
     match /memberships/{membershipId} {
@@ -189,21 +181,53 @@ service cloud.firestore {
       allow create: if isCircleAdmin(request.resource.data.circleId)
         && request.resource.data.createdBy == uid();
       allow update: if isCircleAdmin(resource.data.circleId);
-      allow delete: if false;
+      allow delete: if isCircleAdmin(resource.data.circleId);
+    }
+
+    match /assignmentBlocks/{blockId} {
+      allow read: if isMember(resource.data.circleId);
+      allow create: if isCircleAdmin(request.resource.data.circleId)
+        && request.resource.data.assignmentId is string;
+      allow update: if isCircleAdmin(resource.data.circleId);
+      allow delete: if isCircleAdmin(resource.data.circleId);
+    }
+
+    match /blockAnswers/{answerId} {
+      allow read: if isMember(resource.data.circleId);
+      allow create: if signedIn()
+        && request.resource.data.userId == uid()
+        && isMember(request.resource.data.circleId);
+      allow update: if signedIn()
+        && resource.data.userId == uid()
+        && request.resource.data.userId == uid();
+      allow delete: if isCircleAdmin(resource.data.circleId)
+        || (signedIn() && resource.data.userId == uid());
+    }
+
+    match /assignmentSubmissions/{submissionId} {
+      allow read: if isMember(resource.data.circleId);
+      allow create: if signedIn()
+        && request.resource.data.userId == uid()
+        && isMember(request.resource.data.circleId);
+      allow update: if signedIn()
+        && resource.data.userId == uid()
+        && request.resource.data.userId == uid();
+      allow delete: if isCircleAdmin(resource.data.circleId);
     }
 
     match /objectives/{objectiveId} {
+      // Denormalized circleId required so list queries can authorize
+      // without get() on the parent assignment (which breaks list).
       function assignmentCircleId() {
         return get(/databases/$(database)/documents/assignments/$(request.resource.data.assignmentId)).data.circleId;
       }
-      function existingAssignmentCircleId() {
-        return get(/databases/$(database)/documents/assignments/$(resource.data.assignmentId)).data.circleId;
-      }
 
-      allow read: if isMember(existingAssignmentCircleId());
-      allow create: if isCircleAdmin(assignmentCircleId());
-      allow update: if isCircleAdmin(existingAssignmentCircleId());
-      allow delete: if false;
+      allow read: if isMember(resource.data.circleId);
+      allow create: if isCircleAdmin(request.resource.data.circleId)
+        && request.resource.data.assignmentId is string
+        && assignmentCircleId() == request.resource.data.circleId;
+      allow update: if isCircleAdmin(resource.data.circleId);
+      allow delete: if isCircleAdmin(resource.data.circleId);
     }
 
     match /progressLogs/{logId} {
@@ -214,7 +238,22 @@ service cloud.firestore {
       allow update: if signedIn()
         && resource.data.userId == uid()
         && request.resource.data.userId == uid();
-      allow delete: if false;
+      allow delete: if isCircleAdmin(resource.data.circleId);
+    }
+
+    // Teacher content library — owner-only; publish uses circle-admin create paths.
+    match /libraryItems/{itemId} {
+      allow read: if signedIn() && resource.data.ownerId == uid();
+      allow create: if signedIn()
+        && request.resource.data.ownerId == uid()
+        && request.resource.data.kind in ['resource', 'challenge', 'assignment']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 200;
+      allow update: if signedIn()
+        && resource.data.ownerId == uid()
+        && request.resource.data.ownerId == uid();
+      allow delete: if signedIn() && resource.data.ownerId == uid();
     }
   }
 }

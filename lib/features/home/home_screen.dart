@@ -38,10 +38,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       appBar: brandAppBar(
         automaticallyImplyLeading: false,
         title: Text(
-          'Circles',
+          'Hoops',
           style: brandDisplay(fontWeight: FontWeight.w600),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.collections_bookmark_outlined),
+            tooltip: 'Library',
+            onPressed: () => context.push('/library'),
+          ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: () => context.push('/settings'),
@@ -388,8 +393,8 @@ class _EmptyHome extends StatelessWidget {
           children: [
             Text(
               canCreate
-                  ? 'Open your first Circle'
-                  : 'You are not in a Circle yet',
+                  ? 'Open your first Hoop'
+                  : 'You are not in a Hoop yet',
               textAlign: TextAlign.center,
               style: brandDisplay(fontSize: 22),
             ),
@@ -405,7 +410,7 @@ class _EmptyHome extends StatelessWidget {
               const SizedBox(height: 20),
               FilledButton(
                 onPressed: () => context.push('/circles/new'),
-                child: const Text('New Circle'),
+                child: const Text('New Hoop'),
               ),
             ],
           ],

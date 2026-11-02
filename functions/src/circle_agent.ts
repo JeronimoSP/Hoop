@@ -85,9 +85,9 @@ function buildPrompt(opts: {
         : 'Handle the triggering circle message as a coding task on this repository.';
 
   return [
-    'You are the Circle Agent for the Circulo Flutter/Firebase app.',
+    'You are the Hoop Agent for the Hoop Flutter/Firebase app.',
     modeLine,
-    `Circle id: ${opts.circleId}`,
+    `Hoop id: ${opts.circleId}`,
     '',
     'Recent circle posts (oldest → newest, text only):',
     recentBlock || '(none)',
@@ -301,7 +301,7 @@ async function runCursorJob(opts: {
         : err instanceof Error
           ? err.message
           : String(err);
-    logger.error('Circle agent job failed', { err: message, jobId: opts.jobId });
+    logger.error('Hoop agent job failed', { err: message, jobId: opts.jobId });
     await jobRef.set(
       {
         status: 'failed',
@@ -328,7 +328,7 @@ async function runCursorJob(opts: {
   }
 }
 
-/** Ensure the synthetic Circle Agent user exists (callable, platform admin). */
+/** Ensure the synthetic Hoop Agent user exists (callable, platform admin). */
 export const bootstrapCircleAgent = onCall(
   {
     region: REGION,
@@ -357,7 +357,7 @@ export const bootstrapCircleAgent = onCall(
         {
           isAgent: true,
           isPlatformAdmin: false,
-          name: 'Circle Agent',
+          name: 'Hoop Agent',
           alias: 'Agent',
           email,
         },
@@ -369,7 +369,7 @@ export const bootstrapCircleAgent = onCall(
     const uid = `agent_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
     await db.doc(`users/${uid}`).set({
       email,
-      name: 'Circle Agent',
+      name: 'Hoop Agent',
       alias: 'Agent',
       isAgent: true,
       isPlatformAdmin: false,

@@ -12,7 +12,20 @@
           "package_name": "com.circulo.circulo"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "302212210419-jepnmgnbu3ontps26i6hrm71l6trvh7v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.circulo.circulo",
+            "certificate_hash": "ab1df69ef1b57eeda566cec969ad299745bf2894"
+          }
+        },
+        {
+          "client_id": "302212210419-5gmt7smk1ddgvhrkicql4rkrpnbebmp0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBxICi9VYmAjDEh-ggYD804lj_jATlSBVc"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "302212210419-5gmt7smk1ddgvhrkicql4rkrpnbebmp0.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "302212210419-ltqjd9dicvt2kj3fll2krd84tcgci0mr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.circulo.circulo"
+              }
+            }
+          ]
         }
       }
     }

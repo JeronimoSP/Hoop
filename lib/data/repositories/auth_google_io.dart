@@ -5,7 +5,11 @@ Future<UserCredential> signInWithGoogleNative({
   required FirebaseAuth auth,
   required Future<void> Function(User user) upsertUser,
 }) async {
-  await GoogleSignIn.instance.initialize();
+  // Web OAuth client (client_type 3) — required as serverClientId on Android
+  // when google-services.json lacks default_web_client_id / oauth entries.
+  const serverClientId =
+      '302212210419-5gmt7smk1ddgvhrkicql4rkrpnbebmp0.apps.googleusercontent.com';
+  await GoogleSignIn.instance.initialize(serverClientId: serverClientId);
   final account = await GoogleSignIn.instance.authenticate();
   final idToken = account.authentication.idToken;
   if (idToken == null) {

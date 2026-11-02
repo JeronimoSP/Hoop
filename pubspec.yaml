@@ -1,5 +1,5 @@
 name: circulo
-description: "Circle — Evocative World elearning — Flutter MVP + Firebase"
+description: "Hoop — Evocative World elearning — Flutter MVP + Firebase"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -40,7 +40,6 @@ dependencies:
   firebase_auth: ^6.7.0
   google_sign_in: ^7.2.0
   cloud_firestore: ^6.10.0
-  cloud_functions: ^6.0.0
   google_fonts: ^8.2.1
   url_launcher: ^6.3.2
   firebase_storage: ^13.6.0
@@ -86,6 +85,7 @@ flutter:
   assets:
     - assets/brand/evocative_world_logo.png
     - assets/brand/ew_mark.jpg
+    - assets/thread/spiral_bg.jpg
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

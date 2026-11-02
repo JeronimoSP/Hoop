@@ -11,6 +11,12 @@ enum ProgressStatus { pending, completed }
 
 enum CoinState { pending, inProgress, completed }
 
+enum AssignmentStatus { draft, published, archived }
+
+enum BlockKind { content, input }
+
+enum SubmissionStatus { notStarted, inProgress, submitted, late }
+
 class Assignment {
   const Assignment({
     required this.id,
@@ -19,7 +25,11 @@ class Assignment {
     required this.title,
     required this.createdAt,
     this.description,
-    this.status = 'active',
+    this.status = AssignmentStatus.draft,
+    this.opensAt,
+    this.dueAt,
+    this.allowLate = false,
+    this.publishedAt,
   });
 
   final String id;
@@ -28,7 +38,14 @@ class Assignment {
   final String title;
   final String? description;
   final DateTime createdAt;
-  final String status;
+  final AssignmentStatus status;
+  final DateTime? opensAt;
+  final DateTime? dueAt;
+  final bool allowLate;
+  final DateTime? publishedAt;
+
+  bool get isDraft => status == AssignmentStatus.draft;
+  bool get isPublished => status == AssignmentStatus.published;
 
   factory Assignment.fromMap(String id, Map<String, dynamic> data) {
     return Assignment(
@@ -39,10 +56,211 @@ class Assignment {
       description: data['description'] as String?,
       createdAt:
           (data['createdAt'] as dynamic)?.toDate() as DateTime? ?? DateTime.now(),
-      status: data['status'] as String? ?? 'active',
+      status: assignmentStatusFromString(data['status'] as String?),
+      opensAt: (data['opensAt'] as dynamic)?.toDate() as DateTime?,
+      dueAt: (data['dueAt'] as dynamic)?.toDate() as DateTime?,
+      allowLate: data['allowLate'] as bool? ?? false,
+      publishedAt: (data['publishedAt'] as dynamic)?.toDate() as DateTime?,
     );
   }
 }
+
+AssignmentStatus assignmentStatusFromString(String? value) {
+  switch (value) {
+    case 'published':
+    case 'active':
+      return AssignmentStatus.published;
+    case 'archived':
+      return AssignmentStatus.archived;
+    case 'draft':
+    default:
+      return AssignmentStatus.draft;
+  }
+}
+
+String assignmentStatusToString(AssignmentStatus status) {
+  switch (status) {
+    case AssignmentStatus.draft:
+      return 'draft';
+    case AssignmentStatus.published:
+      return 'published';
+    case AssignmentStatus.archived:
+      return 'archived';
+  }
+}
+
+class AssignmentBlock {
+  const AssignmentBlock({
+    required this.id,
+    required this.circleId,
+    required this.assignmentId,
+    required this.order,
+    required this.kind,
+    required this.type,
+    this.required = false,
+    this.payload = const {},
+  });
+
+  final String id;
+  final String circleId;
+  final String assignmentId;
+  final int order;
+  final BlockKind kind;
+  final String type;
+  final bool required;
+  final Map<String, dynamic> payload;
+
+  bool get isContent => kind == BlockKind.content;
+  bool get isInput => kind == BlockKind.input;
+
+  factory AssignmentBlock.fromMap(String id, Map<String, dynamic> data) {
+    return AssignmentBlock(
+      id: id,
+      circleId: data['circleId'] as String? ?? '',
+      assignmentId: data['assignmentId'] as String? ?? '',
+      order: (data['order'] as num?)?.toInt() ?? 0,
+      kind: (data['kind'] as String?) == 'input'
+          ? BlockKind.input
+          : BlockKind.content,
+      type: data['type'] as String? ?? 'text',
+      required: data['required'] as bool? ?? false,
+      payload: Map<String, dynamic>.from(data['payload'] as Map? ?? {}),
+    );
+  }
+}
+
+class BlockAnswer {
+  const BlockAnswer({
+    required this.id,
+    required this.circleId,
+    required this.assignmentId,
+    required this.blockId,
+    required this.userId,
+    required this.updatedAt,
+    this.value = const {},
+  });
+
+  final String id;
+  final String circleId;
+  final String assignmentId;
+  final String blockId;
+  final String userId;
+  final Map<String, dynamic> value;
+  final DateTime updatedAt;
+
+  factory BlockAnswer.fromMap(String id, Map<String, dynamic> data) {
+    return BlockAnswer(
+      id: id,
+      circleId: data['circleId'] as String? ?? '',
+      assignmentId: data['assignmentId'] as String? ?? '',
+      blockId: data['blockId'] as String? ?? '',
+      userId: data['userId'] as String? ?? '',
+      value: Map<String, dynamic>.from(data['value'] as Map? ?? {}),
+      updatedAt:
+          (data['updatedAt'] as dynamic)?.toDate() as DateTime? ?? DateTime.now(),
+    );
+  }
+
+  bool get hasValue {
+    if (value.isEmpty) return false;
+    final text = value['text'] as String?;
+    if (text != null && text.trim().isNotEmpty) return true;
+    final ids = value['selectedOptionIds'];
+    if (ids is List && ids.isNotEmpty) return true;
+    final files = value['files'];
+    if (files is List && files.isNotEmpty) return true;
+    return false;
+  }
+}
+
+class AssignmentSubmission {
+  const AssignmentSubmission({
+    required this.id,
+    required this.circleId,
+    required this.assignmentId,
+    required this.userId,
+    required this.status,
+    required this.answeredRequiredCount,
+    required this.requiredCount,
+    required this.updatedAt,
+    this.submittedAt,
+    this.facilitatorFeedback,
+  });
+
+  final String id;
+  final String circleId;
+  final String assignmentId;
+  final String userId;
+  final SubmissionStatus status;
+  final int answeredRequiredCount;
+  final int requiredCount;
+  final DateTime? submittedAt;
+  final DateTime updatedAt;
+  final String? facilitatorFeedback;
+
+  factory AssignmentSubmission.fromMap(String id, Map<String, dynamic> data) {
+    return AssignmentSubmission(
+      id: id,
+      circleId: data['circleId'] as String? ?? '',
+      assignmentId: data['assignmentId'] as String? ?? '',
+      userId: data['userId'] as String? ?? '',
+      status: submissionStatusFromString(data['status'] as String?),
+      answeredRequiredCount:
+          (data['answeredRequiredCount'] as num?)?.toInt() ?? 0,
+      requiredCount: (data['requiredCount'] as num?)?.toInt() ?? 0,
+      submittedAt: (data['submittedAt'] as dynamic)?.toDate() as DateTime?,
+      updatedAt:
+          (data['updatedAt'] as dynamic)?.toDate() as DateTime? ?? DateTime.now(),
+      facilitatorFeedback: data['facilitatorFeedback'] as String?,
+    );
+  }
+}
+
+SubmissionStatus submissionStatusFromString(String? value) {
+  switch (value) {
+    case 'inProgress':
+      return SubmissionStatus.inProgress;
+    case 'submitted':
+      return SubmissionStatus.submitted;
+    case 'late':
+      return SubmissionStatus.late;
+    case 'notStarted':
+    default:
+      return SubmissionStatus.notStarted;
+  }
+}
+
+String submissionStatusToString(SubmissionStatus status) {
+  switch (status) {
+    case SubmissionStatus.notStarted:
+      return 'notStarted';
+    case SubmissionStatus.inProgress:
+      return 'inProgress';
+    case SubmissionStatus.submitted:
+      return 'submitted';
+    case SubmissionStatus.late:
+      return 'late';
+  }
+}
+
+class AssignmentProgressView {
+  const AssignmentProgressView({
+    required this.assignment,
+    required this.state,
+    required this.answeredRequiredCount,
+    required this.requiredCount,
+  });
+
+  final Assignment assignment;
+  final CoinState state;
+  final int answeredRequiredCount;
+  final int requiredCount;
+
+  int get totalCount => requiredCount;
+  int get completedCount => answeredRequiredCount;
+}
+
+// --- Legacy ---
 
 class Objective {
   const Objective({
@@ -203,5 +421,23 @@ CoinState deriveCoinState({
   final done = objectives.where((o) => completedIds.contains(o.id)).length;
   if (done == 0) return CoinState.pending;
   if (done >= objectives.length) return CoinState.completed;
+  return CoinState.inProgress;
+}
+
+CoinState deriveProgressState({
+  required int requiredCount,
+  required int answeredRequiredCount,
+  required SubmissionStatus? submissionStatus,
+}) {
+  if (submissionStatus == SubmissionStatus.submitted ||
+      submissionStatus == SubmissionStatus.late) {
+    return CoinState.completed;
+  }
+  if (requiredCount <= 0) {
+    return submissionStatus == SubmissionStatus.inProgress
+        ? CoinState.inProgress
+        : CoinState.pending;
+  }
+  if (answeredRequiredCount <= 0) return CoinState.pending;
   return CoinState.inProgress;
 }

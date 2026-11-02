@@ -1,12 +1,10 @@
-# Circle — Flutter MVP
+# Hoop — Flutter MVP
 
-Mobile app (iOS/Android) **Circle** — Evocative World elearning product — with Google Auth, realtime Firestore, Assignments coin rail, and typed thread. Also runs in **Chrome** (`flutter run -d chrome`) or on Hosting.
+Mobile app (iOS/Android) **Hoop** — Evocative World elearning product — with Google Auth, realtime Firestore, block Assignments (system chat) + rail, and typed thread. Also runs in **Chrome** (`flutter run -d chrome`) or on Hosting.
 
 Contrato: [docs/13](../docs/13-diseno-tecnico-mvp-firebase.md) · Plan: [docs/15](../docs/15-plan-flutter-mvp.md)
 
 **App online (Hosting):** https://circulo-mvp.web.app
-
-**Freeze baseline:** Tag `v0-freeze` marks the Circulo MVP snapshot on private GitHub before the Cursor Cloud circle-agent feature. Remote: `https://github.com/jspotorno/circulo`. Invite `agent@circulo.app` into a dedicated dev circle (after `bootstrapCircleAgent`); member messages trigger cloud agent runs that reply in-thread with Continue / Open PR / Retry.
 
 ## Setup
 
@@ -31,7 +29,7 @@ flutter run -d chrome --web-port=5182
 
 7. First facilitator flow:
    - Google login → Settings → **Become a facilitator**
-   - Home → FAB `+` → New Circle
+   - Home → FAB `+` → New Hoop
    - (Optional) Settings → turn off “Allow new facilitator sign-ups”
 
 ## Deploy (Firebase backend + Hosting)
@@ -78,32 +76,21 @@ Hosting suele registrar `*.web.app` / `*.firebaseapp.com` automáticamente; comp
 - [ ] PDF o video: portada tras Cloud Function (`generatePdfCover`)
 - [ ] Segundo dispositivo ve el hilo en realtime
 
-Logs Functions: `firebase functions:log --only generatePdfCover,notifyOnNewPost,onCircleAgentPost,agentAction`
-
-### Circle Agent (Cursor Cloud)
-
-1. Set secrets/params (Blaze project):
-   ```bash
-   firebase functions:secrets:set CURSOR_API_KEY
-   firebase functions:config:set # or params: GITHUB_REPO=jspotorno/circulo
-   ```
-   Deploy with params, e.g.:
-   ```bash
-   firebase deploy --only functions:bootstrapCircleAgent,functions:onCircleAgentPost,functions:agentAction \
-     --set-env-vars GITHUB_REPO=jspotorno/circulo
-   ```
-   Prefer `firebase functions:params` / `.env` for `GITHUB_REPO`, `AGENT_EMAIL=agent@circulo.app`, `AGENT_MODEL_ID=composer-2.5`.
-2. As platform admin, call callable `bootstrapCircleAgent` once (or use Firebase console Admin SDK) to create `users/{uid}` with `isAgent: true`, email `agent@circulo.app`.
-3. In a dedicated **dev** circle, admin → Add member → `agent@circulo.app`.
-4. Any non-agent post in that circle enqueues a Cursor cloud run; the agent replies in-thread.
+Logs Functions: `firebase functions:log --only generatePdfCover,notifyOnNewPost`
 
 ## Smoke checklist (E1–E5 + media)
 
 - [ ] Login Google crea `users/{uid}` y abre home
 - [ ] Facilitador se auto-promueve y ve FAB; member no
 - [ ] Dos dispositivos ven posts `free` en realtime
-- [ ] Admin publica instruction sticky y resource
-- [ ] Coin rail + sheet: marcar objective actualiza la coin
+- [ ] Admin publica Resource desde clip (link / Google Doc / PDF / audio / video); aparece en sticky + feed
+- [ ] Admin long-press any post → Delete post (confirm); post disappears for all members
+- [ ] Admin Hoop info → Delete Hoop → returns home without permission error (logcat `[HoopDelete]`)
+- [ ] Google Doc Resource: Doc en “Anyone with the link”; post pasa a PDF + portada (`exportGoogleDocPdf` + `generatePdfCover`)
+- [ ] Coin rail above composer: coins + challenge-of-the-day chip (no `+` on rail); sheet marks objectives
+- [ ] AppBar Assignments / Challenges / Resources icons open list screens (admin create there)
+- [ ] Admin Hoop info → Progress → member rows show coins + challenge enrollments; tap opens detail sheet
+- [ ] Home / Settings → Library → create resource / challenge / assignment; Publish into an admin Hoop
 - [ ] Adjuntar imagen (galería) en hilo; otros miembros la ven
 - [ ] Cámara: foto y video ≤60 s; video muestra portada tras CF
 - [ ] Micrófono: mantener pulsado envía nota de voz; deslizar cancela
@@ -122,7 +109,8 @@ firebase deploy --only storage,firestore:rules
 ```
 
 Límites: imagen ≤5 MB, audio ≤5 MB, PDF ≤20 MB, video ≤25 MB.  
-Path: `circles/{circleId}/uploads/{uid}/{postId}/{fileName}`.
+Path: `circles/{circleId}/uploads/{uid}/{postId}/{fileName}`.  
+Library media: `library/{ownerId}/{itemId}/{fileName}` (owner-only).
 
 ## Cloud Functions (covers PDF + video)
 
@@ -134,6 +122,14 @@ cd .. && firebase deploy --only functions,storage
 ```
 
 `generatePdfCover` se dispara al subir PDF o video, escribe `cover.jpg` y actualiza `meta.coverStatus` / `coverStoragePath` / `coverDownloadUrl`.
+
+`exportGoogleDocPdf` runs when an admin publishes a Resource with `meta.kind = googleDoc`. The Doc must be shared as **Anyone with the link (Viewer)**. The function fetches `…/export?format=pdf`, uploads `document.pdf` to Storage, and rewrites the post as a PDF resource (`kind: pdf`, `exportStatus: ready`, `sourceUrl` kept). Then `generatePdfCover` runs as usual. Private docs fail with `exportStatus: failed`.
+
+Deploy only this function:
+
+```bash
+firebase deploy --only functions:exportGoogleDocPdf
+```
 
 `notifyOnNewPost` runs when a post is created and sends FCM to the other circle members (tokens in `users/{uid}/fcmTokens`).
 
@@ -167,9 +163,38 @@ Logs: `firebase functions:log --only notifyOnNewPost`
 
 ## Composer (estilo WhatsApp)
 
-- Texto vacío → micrófono (mantener para grabar, soltar para enviar; deslizar a la izquierda cancela)
+- Texto vacío → micrófono (mantener para grabar / soltar para enviar; toque corto bloquea hasta el stop rojo, que envía; el mic del composer queda inactivo mientras graba)
 - Texto no vacío → enviar
 - Clip → Galería / Cámara / Video / Documento (PDF)
+- Admin clip → Resource (link, Google Doc, PDF, audio, video) + Challenge + Assignment
+- Google Doc Resource: share as Anyone with the link; CF converts to PDF and replaces the link post
+- Coin rail sits above the composer (hidden while recording): assignment **coins** + singular **challenge-of-the-day** chip (tap → today’s session). No create/`+` on the rail—create via AppBar list screens or admin attach menu.
+
+## Facilitator progress
+
+- Thread **CoinRail**: member assignment coins + challenge-of-the-day shortcut.
+- Admins open **Hoop info → Progress** (`/circles/:circleId/progress`) to see every member’s coin totals and challenge enrollments.
+- Tap a member for objective checkmarks and per-enrollment day rollups (completed / total sessions).
+- Non-admins hitting the progress route are redirected to the thread.
+
+## Teacher content library
+
+- Signed-in users own a personal **Library** (`libraryItems/{id}`): resources, challenges, and assignments.
+- **Reuse rule:** creating a resource, challenge, or assignment **in a Hoop** also creates/updates a Library row for that facilitator. **Publish** from Library clones into another Hoop without duplicating the catalog row.
+- Entry: Home app bar bookmark icon or Settings → Content library (`/library`). Tap a linked item opens the Hoop instance when `meta` has `assignmentId` / `challengeId`.
+- Create by kind in Library; media under Storage `library/{ownerId}/{itemId}/…` (owner-only).
+- **Publish** → admin Hoops:
+  - resource → Resource post
+  - challenge → challenge (media re-uploaded)
+  - assignment → system-chat assignment (`meta.blocks` snapshot when present)
+
+### Smoke — progress + library
+
+- [ ] Thread: assignment rail + challenge-of-day; create assignment from AppBar (system-chat composer)
+- [ ] Progress: admin sees members; coins and challenge status; detail sheet lists objectives / days
+- [ ] Library: create link resource → Publish to admin Hoop → appears as Resource in thread sticky/feed
+- [ ] Library: create quest challenge → Publish → appears under Hoop Challenges
+- [ ] Library: create assignment → Publish → coins appear on rail for members
 
 ## Estructura
 
@@ -179,9 +204,9 @@ lib/
   core/utils/   # download_helper (web/io)
   domain/models/
   data/repositories/
-  features/{auth,home,thread,coins,admin,settings}/
+  features/{auth,home,thread,coins,admin,library,settings}/
   router/
-functions/      # Node 20 — PDF/video cover + notifyOnNewPost
+functions/      # Node 20 — PDF/video cover + Google Doc export + notifyOnNewPost
 build/web/      # output de flutter build web → Hosting
 web/firebase-messaging-sw.js  # FCM web service worker
 ```

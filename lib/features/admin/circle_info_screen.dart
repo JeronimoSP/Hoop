@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -21,12 +23,63 @@ class CircleInfoScreen extends ConsumerStatefulWidget {
 class _CircleInfoScreenState extends ConsumerState<CircleInfoScreen> {
   final _emailCtrl = TextEditingController();
   bool _adding = false;
+  bool _deleting = false;
   String? _message;
 
   @override
   void dispose() {
     _emailCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _confirmDeleteHoop(String hoopName) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Delete Hoop?'),
+          content: Text(
+            '“$hoopName” and its posts, members, and related data will be '
+            'removed for everyone. This cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      _deleting = true;
+      _message = null;
+    });
+    // Drop live listeners so mid-delete permission errors do not rebuild UI.
+    ref.invalidate(_circleProvider(widget.circleId));
+    ref.invalidate(_membersProvider(widget.circleId));
+    debugPrint('[HoopDelete] UI start ${widget.circleId}');
+    try {
+      await ref.read(circleRepositoryProvider).deleteCircle(widget.circleId);
+      debugPrint('[HoopDelete] UI success ${widget.circleId}');
+      if (!mounted) return;
+      context.go('/');
+    } catch (e) {
+      debugPrint('[HoopDelete] UI failed ${widget.circleId}: $e');
+      if (!mounted) return;
+      final detail = e is FirebaseException
+          ? '${e.code}: ${e.message ?? e}'
+          : e.toString();
+      setState(() => _message = 'Could not delete this Hoop. $detail');
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
   }
 
   Future<void> _addMember() async {
@@ -40,7 +93,7 @@ class _CircleInfoScreenState extends ConsumerState<CircleInfoScreen> {
       final found = await ref.read(userRepositoryProvider).getByEmail(email);
       if (found == null) {
         setState(() => _message =
-            'Account not found. Ask them to sign in to Circle first.');
+            'Account not found. Ask them to sign in to Hoop first.');
         return;
       }
       await ref.read(circleRepositoryProvider).addMember(
@@ -48,7 +101,7 @@ class _CircleInfoScreenState extends ConsumerState<CircleInfoScreen> {
             userId: found.uid,
           );
       _emailCtrl.clear();
-      setState(() => _message = 'Welcome to the circle');
+      setState(() => _message = 'Welcome to the Hoop');
     } catch (e) {
       setState(() => _message = 'Could not add member. Please try again.');
     } finally {
@@ -58,6 +111,27 @@ class _CircleInfoScreenState extends ConsumerState<CircleInfoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_deleting) {
+      return Scaffold(
+        appBar: brandAppBar(
+          title: Text(
+            'Hoop info',
+            style: brandDisplay(fontWeight: FontWeight.w600),
+          ),
+        ),
+        body: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Deleting Hoop…'),
+            ],
+          ),
+        ),
+      );
+    }
+
     final circleAsync = ref.watch(_circleProvider(widget.circleId));
     final membersAsync = ref.watch(_membersProvider(widget.circleId));
     final uid = ref.watch(authStateProvider).asData?.value?.uid;
@@ -74,7 +148,7 @@ class _CircleInfoScreenState extends ConsumerState<CircleInfoScreen> {
     return Scaffold(
       appBar: brandAppBar(
         title: Text(
-          'Circle info',
+          'Hoop info',
           style: brandDisplay(fontWeight: FontWeight.w600),
         ),
       ),
@@ -83,7 +157,7 @@ class _CircleInfoScreenState extends ConsumerState<CircleInfoScreen> {
         error: (e, _) => Center(child: Text('$e')),
         data: (circle) {
           if (circle == null) {
-            return const Center(child: Text('Circle not found'));
+            return const Center(child: Text('Hoop not found'));
           }
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -105,6 +179,19 @@ class _CircleInfoScreenState extends ConsumerState<CircleInfoScreen> {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => context.push('/circles/${widget.circleId}/challenges'),
               ),
+              if (isAdmin)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.insights_outlined,
+                    color: AppColors.accent,
+                  ),
+                  title: const Text('Progress'),
+                  subtitle: const Text('Member coins and challenge status'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () =>
+                      context.push('/circles/${widget.circleId}/progress'),
+                ),
               const SizedBox(height: 8),
               Text(
                 'Members',
@@ -136,7 +223,6 @@ class _CircleInfoScreenState extends ConsumerState<CircleInfoScreen> {
                   controller: _emailCtrl,
                   decoration: const InputDecoration(
                     labelText: 'Add member by email',
-                    hintText: 'friend@… or agent@circulo.app',
                   ),
                   keyboardType: TextInputType.emailAddress,
                 ),
@@ -144,7 +230,7 @@ class _CircleInfoScreenState extends ConsumerState<CircleInfoScreen> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: FilledButton(
-                    onPressed: _adding ? null : _addMember,
+                    onPressed: _adding || _deleting ? null : _addMember,
                     child: _adding
                         ? const SizedBox(
                             width: 18,
@@ -153,6 +239,26 @@ class _CircleInfoScreenState extends ConsumerState<CircleInfoScreen> {
                           )
                         : const Text('Add'),
                   ),
+                ),
+                const SizedBox(height: 32),
+                const Divider(),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                    side: const BorderSide(color: AppColors.danger),
+                  ),
+                  onPressed: _deleting || _adding
+                      ? null
+                      : () => _confirmDeleteHoop(circle.name),
+                  icon: _deleting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.delete_outline),
+                  label: Text(_deleting ? 'Deleting…' : 'Delete Hoop'),
                 ),
                 if (_message != null) ...[
                   const SizedBox(height: 8),
@@ -197,11 +303,7 @@ class _MemberTile extends ConsumerWidget {
         size: UserAvatarSize.md,
       ),
       title: Text(title),
-      subtitle: Text(
-        user?.isAgent == true
-            ? (role == 'admin' ? 'Agent · admin' : 'Agent')
-            : role,
-      ),
+      subtitle: Text(role),
       dense: true,
     );
   }

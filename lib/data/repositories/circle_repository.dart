@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/circle.dart';
@@ -168,5 +169,129 @@ class CircleRepository {
       data['nextMeetingAt'] = Timestamp.fromDate(nextMeetingAt);
     }
     await _db.collection('circles').doc(circleId).update(data);
+  }
+
+  /// Deletes a Hoop and related docs (admin only; enforced by rules).
+  /// Memberships are removed last so the admin keeps `isCircleAdmin` until the end.
+  Future<void> deleteCircle(String circleId) async {
+    void log(String step, [Object? err]) {
+      if (err == null) {
+        debugPrint('[HoopDelete] $circleId $step ok');
+      } else {
+        debugPrint('[HoopDelete] $circleId $step FAILED: $err');
+      }
+    }
+
+    Future<void> deleteQuery(Query<Map<String, dynamic>> query) async {
+      while (true) {
+        final snap = await query.limit(200).get();
+        if (snap.docs.isEmpty) break;
+        var batch = _db.batch();
+        var ops = 0;
+        for (final doc in snap.docs) {
+          batch.delete(doc.reference);
+          ops++;
+          if (ops >= 450) {
+            await batch.commit();
+            batch = _db.batch();
+            ops = 0;
+          }
+        }
+        if (ops > 0) await batch.commit();
+        if (snap.docs.length < 200) break;
+      }
+    }
+
+    Future<void> step(String name, Future<void> Function() run) async {
+      try {
+        await run();
+        log(name);
+      } catch (e) {
+        log(name, e);
+        rethrow;
+      }
+    }
+
+    await step('posts', () async {
+      while (true) {
+        final posts = await _db
+            .collection('circles')
+            .doc(circleId)
+            .collection('posts')
+            .limit(50)
+            .get();
+        if (posts.docs.isEmpty) break;
+        for (final post in posts.docs) {
+          final reactions =
+              await post.reference.collection('reactions').get();
+          var batch = _db.batch();
+          var ops = 0;
+          for (final r in reactions.docs) {
+            batch.delete(r.reference);
+            ops++;
+            if (ops >= 450) {
+              await batch.commit();
+              batch = _db.batch();
+              ops = 0;
+            }
+          }
+          batch.delete(post.reference);
+          await batch.commit();
+        }
+      }
+    });
+
+    await step(
+      'challenges',
+      () => deleteQuery(
+        _db.collection('circles').doc(circleId).collection('challenges'),
+      ),
+    );
+    await step(
+      'challengeEnrollments',
+      () => deleteQuery(
+        _db
+            .collection('challengeEnrollments')
+            .where('circleId', isEqualTo: circleId),
+      ),
+    );
+    await step(
+      'challengeSessions',
+      () => deleteQuery(
+        _db
+            .collection('challengeSessions')
+            .where('circleId', isEqualTo: circleId),
+      ),
+    );
+    await step('assignments', () async {
+      final assignments = await _db
+          .collection('assignments')
+          .where('circleId', isEqualTo: circleId)
+          .get();
+      for (final a in assignments.docs) {
+        await deleteQuery(
+          _db.collection('objectives').where('assignmentId', isEqualTo: a.id),
+        );
+        await a.reference.delete();
+      }
+    });
+    await step(
+      'progressLogs',
+      () => deleteQuery(
+        _db.collection('progressLogs').where('circleId', isEqualTo: circleId),
+      ),
+    );
+    await step(
+      'circle',
+      () => _db.collection('circles').doc(circleId).delete(),
+    );
+    // Memberships last — admin must remain a member for prior admin deletes.
+    await step(
+      'memberships',
+      () => deleteQuery(
+        _db.collection('memberships').where('circleId', isEqualTo: circleId),
+      ),
+    );
+    log('done');
   }
 }

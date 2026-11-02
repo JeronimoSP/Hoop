@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,12 +10,14 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../domain/models/challenge.dart';
+import '../../router/app_router.dart';
 import 'auth_repository.dart';
 import 'challenge_repository.dart';
 
 const String kPracticeActionId = 'play_practice';
 const String kPracticeCategoryId = 'circulo_practice';
-const String kPracticeChannelId = 'circulo_practice';
+/// New id so Android recreates the channel with max + alarm audio attributes.
+const String kPracticeChannelId = 'circulo_practice_alarm_v2';
 
 /// Shared plugin so FCM foreground alerts and practice alarms share one init.
 final FlutterLocalNotificationsPlugin kLocalNotificationsPlugin =
@@ -85,9 +88,10 @@ class ChallengeAlarmPayload {
 }
 
 final challengeAlarmSchedulerProvider = Provider<ChallengeAlarmScheduler>((ref) {
+  // Stable instance so notification callbacks keep the open-handler.
   return ChallengeAlarmScheduler(
-    db: ref.watch(firestoreProvider),
-    challenges: ref.watch(challengeRepositoryProvider),
+    db: ref.read(firestoreProvider),
+    challenges: ref.read(challengeRepositoryProvider),
   );
 });
 
@@ -106,10 +110,12 @@ class ChallengeAlarmScheduler {
 
   static const _practiceChannel = AndroidNotificationChannel(
     kPracticeChannelId,
-    'Practice reminders',
-    description: 'Alarms before your daily challenge practice',
-    importance: Importance.high,
+    'Practice alarms',
+    description: 'Alarm-style alerts that open your daily practice',
+    importance: Importance.max,
     playSound: true,
+    enableVibration: true,
+    audioAttributesUsage: AudioAttributesUsage.alarm,
   );
 
   void setOpenHandler(void Function(ChallengeAlarmPayload payload) handler) {
@@ -166,6 +172,7 @@ class ChallengeAlarmScheduler {
     await android?.createNotificationChannel(_practiceChannel);
     await android?.requestNotificationsPermission();
     await android?.requestExactAlarmsPermission();
+    await android?.requestFullScreenIntentPermission();
 
     _localNotificationsInitialized = true;
 
@@ -201,9 +208,14 @@ class ChallengeAlarmScheduler {
         _practiceChannel.id,
         _practiceChannel.name,
         channelDescription: _practiceChannel.description,
-        importance: Importance.high,
-        priority: Priority.high,
+        importance: Importance.max,
+        priority: Priority.max,
         category: AndroidNotificationCategory.alarm,
+        fullScreenIntent: true,
+        visibility: NotificationVisibility.public,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
+        ongoing: true,
+        autoCancel: false,
         actions: <AndroidNotificationAction>[
           const AndroidNotificationAction(
             kPracticeActionId,
@@ -218,9 +230,7 @@ class ChallengeAlarmScheduler {
         categoryIdentifier: kPracticeCategoryId,
         presentAlert: true,
         presentSound: true,
-        interruptionLevel: isTest
-            ? InterruptionLevel.timeSensitive
-            : InterruptionLevel.timeSensitive,
+        interruptionLevel: InterruptionLevel.timeSensitive,
       ),
     );
   }
@@ -262,7 +272,7 @@ class ChallengeAlarmScheduler {
             : 'Practice starts in $pre minutes',
         when,
         _details(isTest: false),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: AndroidScheduleMode.alarmClock,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
         payload: payload.toJson(),
@@ -297,6 +307,52 @@ class ChallengeAlarmScheduler {
       _details(isTest: true),
       payload: payload.toJson(),
     );
+  }
+
+  /// Schedules a practice alarm ~1 minute from now (for device testing).
+  /// Tapping / opening it navigates to the session with [payload] (autoplay).
+  Future<DateTime> scheduleTestInOneMinute({
+    required String title,
+    required ChallengeAlarmPayload payload,
+  }) async {
+    if (kIsWeb) {
+      throw UnsupportedError('Practice alarms are not supported on web');
+    }
+    await ensureInitialized();
+
+    final android = kLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    final notifOk = await android?.areNotificationsEnabled();
+    var exactAllowed = await android?.canScheduleExactNotifications();
+    if (notifOk == false) {
+      await android?.requestNotificationsPermission();
+    }
+    if (exactAllowed == false) {
+      await android?.requestExactAlarmsPermission();
+      exactAllowed = await android?.canScheduleExactNotifications();
+    }
+
+    final id = notificationIdForSession('test_${payload.sessionId}');
+    await kLocalNotificationsPlugin.cancel(id);
+
+    final when = tz.TZDateTime.now(tz.local).add(const Duration(minutes: 1));
+    // alarmClock surfaces like a clock alarm and is more reliable when idle.
+    final mode = exactAllowed == false
+        ? AndroidScheduleMode.inexactAllowWhileIdle
+        : AndroidScheduleMode.alarmClock;
+    await kLocalNotificationsPlugin.zonedSchedule(
+      id,
+      title,
+      'Test alarm · Practice starts now',
+      when,
+      _details(isTest: true),
+      androidScheduleMode: mode,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      payload: payload.toJson(),
+    );
+    return when;
   }
 
   /// Reschedule alarms for every active enrollment of [userId].
@@ -335,6 +391,18 @@ class ChallengeAlarmScheduler {
 void attachChallengeAlarmNavigation(WidgetRef ref, GoRouter router) {
   final scheduler = ref.read(challengeAlarmSchedulerProvider);
   scheduler.setOpenHandler((payload) {
-    router.go(payload.route);
+    // Read current router at tap-time (avoid stale instance from first frame).
+    final current = ref.read(appRouterProvider);
+    // Cancel sticky alarm notification once user opens it.
+    unawaited(
+      kLocalNotificationsPlugin.cancel(
+        scheduler.notificationIdForSession('test_${payload.sessionId}'),
+      ),
+    );
+    unawaited(
+      kLocalNotificationsPlugin
+          .cancel(scheduler.notificationIdForSession(payload.sessionId)),
+    );
+    current.go(payload.route);
   });
 }

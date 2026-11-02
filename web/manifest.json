@@ -1,11 +1,11 @@
 {
-    "name": "Circle",
-    "short_name": "Circle",
+    "name": "Hoop",
+    "short_name": "Hoop",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0D4A5B",
     "theme_color": "#0D4A5B",
-    "description": "Circle — learning in community, by Evocative World.",
+    "description": "Hoop — learning in community, by Evocative World.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

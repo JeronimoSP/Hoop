@@ -32,6 +32,7 @@ class _CirculoAppState extends ConsumerState<CirculoApp> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         attachMessagingNavigation(ref, router);
+        // Handler reads appRouterProvider at tap-time so deep links survive.
         attachChallengeAlarmNavigation(ref, router);
       });
     }
@@ -53,7 +54,7 @@ class _CirculoAppState extends ConsumerState<CirculoApp> {
     }
 
     return MaterialApp.router(
-      title: 'Circle',
+      title: 'Hoop',
       theme: buildCirculoTheme(),
       routerConfig: router,
       debugShowCheckedModeBanner: false,

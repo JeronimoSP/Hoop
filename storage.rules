@@ -87,5 +87,17 @@ service firebase.storage {
       allow update: if false;
       allow delete: if false;
     }
+
+    // Teacher library media: library/{ownerId}/{itemId}/{fileName}
+    match /library/{ownerId}/{itemId}/{fileName} {
+      allow read: if isOwner(ownerId);
+      allow create, update: if isOwner(ownerId)
+        && (
+          (isPdf() && under20MB())
+          || (isAudio() && under100MB())
+          || (isVideo() && under100MB())
+        );
+      allow delete: if isOwner(ownerId);
+    }
   }
 }

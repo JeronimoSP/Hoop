@@ -21,7 +21,7 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  const title = payload.notification?.title || 'Circle';
+  const title = payload.notification?.title || 'Hoop';
   const options = {
     body: payload.notification?.body || 'New message',
     data: payload.data || {},

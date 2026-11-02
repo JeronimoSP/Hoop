@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -66,20 +65,44 @@ class _EnrollmentProgressScreenState
       );
       return;
     }
-    await ref.read(challengeAlarmSchedulerProvider).showTestNotification(
-          title: challenge.title,
-          payload: ChallengeAlarmPayload(
-            circleId: widget.circleId,
-            challengeId: widget.challengeId,
-            sessionId: target.id,
-            autoplay: challenge.isMedia,
+    try {
+      final when =
+          await ref.read(challengeAlarmSchedulerProvider).scheduleTestInOneMinute(
+                title: challenge.title,
+                payload: ChallengeAlarmPayload(
+                  circleId: widget.circleId,
+                  challengeId: widget.challengeId,
+                  sessionId: target.id,
+                  autoplay: challenge.isMedia,
+                ),
+              );
+      if (!mounted) return;
+      final local = when.toLocal();
+      final hh = local.hour.toString().padLeft(2, '0');
+      final mm = local.minute.toString().padLeft(2, '0');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Test alarm set for $hh:$mm — lock the phone, then open the '
+            'notification to play the challenge',
           ),
-          preAlarmMinutes: challenge.preAlarmMinutes,
-        );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('TEMP test notification sent')),
-    );
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            msg.contains('web')
+                ? 'Practice alarms need iOS/Android — not Chrome/web.'
+                : 'Could not schedule alarm: $msg',
+          ),
+          duration: const Duration(seconds: 8),
+        ),
+      );
+    }
   }
 
   String _stateLabel(SessionState state) {
@@ -180,15 +203,23 @@ class _EnrollmentProgressScreenState
                       label: Text('Open today · Day ${today.dayIndex}'),
                     ),
                   ],
-                  if (kDebugMode) ...[
-                    const SizedBox(height: 12),
+                  const SizedBox(height: 12),
+                  if (kIsWeb)
+                    const Text(
+                      'Practice alarms need the iOS/Android app. '
+                      'They cannot run from the Firebase web build in a phone browser.',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                      ),
+                    )
+                  else
                     OutlinedButton.icon(
                       onPressed: () =>
                           _testPracticeAlarm(challenge, sessions),
-                      icon: const Icon(Icons.notification_important_outlined),
-                      label: const Text('TEMP: Test practice alarm'),
+                      icon: const Icon(Icons.alarm_add_outlined),
+                      label: const Text('Test alarm in 1 minute'),
                     ),
-                  ],
                   const SizedBox(height: 20),
                   Text('Sessions', style: brandDisplay(fontSize: 18)),
                   const SizedBox(height: 8),

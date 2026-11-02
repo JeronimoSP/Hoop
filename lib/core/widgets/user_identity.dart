@@ -25,12 +25,9 @@ class UserIdentityChip extends ConsumerWidget {
     final user = ref.watch(appUserProvider(userId)).asData?.value;
     final isMe = myUid != null && userId == myUid;
     final label = user?.displayLabel.trim() ?? '';
-    final isAgent = user?.isAgent == true;
-    final text = isAgent
-        ? (label.isNotEmpty ? '$label · Agent' : 'Agent')
-        : isMe
-            ? (label.isNotEmpty ? '$label · You' : 'You')
-            : (label.isNotEmpty ? label : 'Member');
+    final text = isMe
+        ? (label.isNotEmpty ? '$label · You' : 'You')
+        : (label.isNotEmpty ? label : 'Member');
     final avatarLabel =
         user?.displayName.isNotEmpty == true ? user!.displayName : text;
 

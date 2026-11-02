@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Circle</string>
+	<string>Hoop</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>circulo</string>
+	<string>Hoop</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -67,11 +67,11 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Circle needs the camera for photos and short videos in the thread.</string>
+	<string>Hoop needs the camera for photos and short videos in the thread.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Circle needs the microphone for voice notes and videos.</string>
+	<string>Hoop needs the microphone for voice notes and videos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Circle needs photo library access to attach images.</string>
+	<string>Hoop needs photo library access to attach images.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

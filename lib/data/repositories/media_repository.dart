@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
@@ -50,6 +52,40 @@ class MediaRepository {
   final Map<String, Uint8List> _memoryBytes = {};
 
   DateTime? _voiceStartedAt;
+
+  /// Speech on web typically lands around -20…0 dBFS; -50 crushed the meter
+  /// into a near-full bar that looked static.
+  static const double _minDb = -25;
+
+  final StreamController<double> _voiceLevelCtrl =
+      StreamController<double>.broadcast();
+  StreamSubscription<Amplitude>? _amplitudeSub;
+
+  /// Normalized mic level 0–1 while a voice note is recording; otherwise 0.
+  Stream<double> get voiceLevelStream => _voiceLevelCtrl.stream;
+
+  double _normalizeDb(double currentDb) {
+    return ((currentDb - _minDb) / (0 - _minDb)).clamp(0.0, 1.0);
+  }
+
+  void _startAmplitudeMonitor() {
+    _stopAmplitudeMonitor(emitZero: false);
+    _amplitudeSub = _recorder
+        .onAmplitudeChanged(const Duration(milliseconds: 100))
+        .listen((amp) {
+      if (!_voiceLevelCtrl.isClosed) {
+        _voiceLevelCtrl.add(_normalizeDb(amp.current));
+      }
+    });
+  }
+
+  void _stopAmplitudeMonitor({bool emitZero = true}) {
+    _amplitudeSub?.cancel();
+    _amplitudeSub = null;
+    if (emitZero && !_voiceLevelCtrl.isClosed) {
+      _voiceLevelCtrl.add(0);
+    }
+  }
 
   Future<PickedImage?> pickCompressedImage({
     ImageSource source = ImageSource.gallery,
@@ -177,6 +213,34 @@ class MediaRepository {
     );
   }
 
+  Future<PickedFileBytes?> pickAudioFile() async {
+    final files = await FilePicker.pickFiles(type: FileType.audio);
+    if (files.isEmpty) return null;
+
+    final file = files.single;
+    final bytes = await file.readAsBytes();
+    if (bytes.isEmpty) {
+      throw StateError('Could not read the audio bytes');
+    }
+    if (bytes.length > kMaxAudioBytes) {
+      throw StateError('Audio exceeds the 5 MB limit');
+    }
+
+    final rawName = file.name.trim().isEmpty
+        ? 'audio_${DateTime.now().millisecondsSinceEpoch}.m4a'
+        : file.name;
+    final contentType =
+        lookupMimeType(rawName, headerBytes: bytes) ?? 'audio/mpeg';
+    final safeType =
+        contentType.startsWith('audio/') ? contentType : 'audio/mpeg';
+
+    return PickedFileBytes(
+      bytes: bytes,
+      contentType: safeType,
+      fileName: rawName.replaceAll(RegExp(r'[^\w.\-]+'), '_'),
+    );
+  }
+
   Future<bool> hasMicPermission() => _recorder.hasPermission();
 
   Future<void> startVoiceNote() async {
@@ -185,6 +249,7 @@ class MediaRepository {
       throw StateError('Microphone permission denied');
     }
     if (await _recorder.isRecording()) {
+      _stopAmplitudeMonitor();
       await _recorder.cancel();
     }
 
@@ -207,12 +272,14 @@ class MediaRepository {
       path: path ?? '',
     );
     _voiceStartedAt = DateTime.now();
+    _startAmplitudeMonitor();
   }
 
   /// Stops recording. Returns null if cancelled or too short (<400ms).
   Future<PickedFileBytes?> stopVoiceNote({bool cancel = false}) async {
     final started = _voiceStartedAt;
     _voiceStartedAt = null;
+    _stopAmplitudeMonitor();
 
     if (cancel) {
       await _recorder.cancel();
